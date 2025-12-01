@@ -37,7 +37,7 @@ true
 
 julia> s2 = SchechterMassFunction(s, 1e6, 1e11; npoints=1000); # instance with inverse CDF cache
 
-julia> rand(s) isa Float64 # s2 supports random sampling
+julia> rand(s2) isa Float64 # s2 supports random sampling
 true
 ```
 """
