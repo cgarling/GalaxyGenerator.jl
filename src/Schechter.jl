@@ -1,6 +1,17 @@
 # Code for Schechter luminosity/mass functions
 
 abstract type AbstractMassFunction{T} end
+function Random.rand(rng::Random.AbstractRNG, s::AbstractMassFunction)
+    icdf = s.icdf
+    if isnothing(icdf)
+        error("Provided SchechterMassFunction has no inverse CDF buffer; please create new instance with `mmin` and `mmax` arguments.")
+    else
+        icdf(rand(rng))
+    end
+end
+function Random.rand(rng::Random.AbstractRNG, s::AbstractMassFunction, dims::Dims)
+    return reshape([rand(rng, s) for _ in 1:prod(dims)], dims)
+end
 
 """
     SchechterMassFunction(ϕ, α, Mstar0)
@@ -56,13 +67,13 @@ end
 # Random sampling takes ~2x longer than it should, but not worried for now
 # icdf(s::SchechterMassFunction, x) = s.icdf(x)
 # _rand(s::SchechterMassFunction, u) = s.icdf(u)
-@inline Random.rand(rng::Random.AbstractRNG, s::SchechterMassFunction) = s.icdf(rand(rng))
-function Random.rand(rng::Random.AbstractRNG, s::SchechterMassFunction, dims::Dims)
-    return reshape([rand(rng, s) for _ in 1:prod(dims)], dims)
-end
-function Random.rand(rng::Random.AbstractRNG, s::SchechterMassFunction{T,Nothing}) where T
-    error("Provided SchechterMassFunction has no inverse CDF buffer; please create new instance with `mmin` and `mmax` arguments.")
-end
+# @inline Random.rand(rng::Random.AbstractRNG, s::SchechterMassFunction) = s.icdf(rand(rng))
+# function Random.rand(rng::Random.AbstractRNG, s::SchechterMassFunction, dims::Dims)
+#     return reshape([rand(rng, s) for _ in 1:prod(dims)], dims)
+# end
+# function Random.rand(rng::Random.AbstractRNG, s::SchechterMassFunction{T,Nothing}) where T
+#     error("Provided SchechterMassFunction has no inverse CDF buffer; please create new instance with `mmin` and `mmax` arguments.")
+# end
 
 """
     DoubleSchechterMassFunction(ϕ1, α1, Mstar0_1, ϕ2, α2, Mstar0_2)
@@ -86,7 +97,7 @@ julia> rand(s2) isa Float64 # s2 supports random sampling
 true
 ```
 """
-struct DoubleSchechterMassFunction{T,S}
+struct DoubleSchechterMassFunction{T,S} <: AbstractMassFunction{T}
     S1::SchechterMassFunction{T}
     S2::SchechterMassFunction{T}
     icdf::S
