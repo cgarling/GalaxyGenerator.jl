@@ -54,8 +54,8 @@ function (s::SchechterMassFunction)(Mstar)
     return logten * s.ϕ * (mass_ratio)^(s.α + 1) * exp(-mass_ratio)
 end
 # Random sampling takes ~2x longer than it should, but not worried for now
-icdf(s::SchechterMassFunction, x) = s.icdf(x)
-_rand(s::SchechterMassFunction, u) = s.icdf(u)
+# icdf(s::SchechterMassFunction, x) = s.icdf(x)
+# _rand(s::SchechterMassFunction, u) = s.icdf(u)
 @inline Random.rand(rng::Random.AbstractRNG, s::SchechterMassFunction) = s.icdf(rand(rng))
 function Random.rand(rng::Random.AbstractRNG, s::SchechterMassFunction, dims::Dims)
     return reshape([rand(rng, s) for _ in 1:prod(dims)], dims)
