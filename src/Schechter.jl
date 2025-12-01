@@ -90,6 +90,7 @@ julia> s = DoubleSchechterMassFunction(1.0, 1.2, 1e6, 1.0, 1.1, 1e7) # Basic ins
 DoubleSchechterMassFunction{Float64, Nothing}(SchechterMassFunction{Float64, Nothing}(1.0, 1.2, 1.0e6, nothing), SchechterMassFunction{Float64, Nothing}(1.0, 1.1, 1.0e7, nothing), nothing)
 
 julia> s(1e6) isa Float64 # Call to evaluate mass function
+true
 
 julia> s2 = DoubleSchechterMassFunction(s, 1e6, 1e11; npoints=1000); # instance with inverse CDF cache
 
