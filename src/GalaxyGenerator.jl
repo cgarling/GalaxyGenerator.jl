@@ -1,5 +1,9 @@
 module GalaxyGenerator
+using Trapz: trapz
+using IrrationalConstants: logten
 
-# Write your package code here.
+export SchechterMassFunction, DoubleSchechterMassFunction
+
+include("Schechter.jl")
 
 end

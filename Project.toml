@@ -1,9 +1,15 @@
 name = "GalaxyGenerator"
 uuid = "40110415-7b45-4700-a6dd-62a19fc43a87"
-authors = ["cgarling <chris.t.garling@gmail.com> and contributors"]
 version = "0.1.0"
+authors = ["cgarling <chris.t.garling@gmail.com> and contributors"]
+
+[deps]
+IrrationalConstants = "92d709cd-6900-40b7-9082-c6be49f344b6"
+Trapz = "592b5752-818d-11e9-1e9a-2b8ca4a44cd1"
 
 [compat]
+IrrationalConstants = "0.2"
+Trapz = "2"
 julia = "1.10"
 
 [extras]
