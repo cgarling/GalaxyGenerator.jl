@@ -31,26 +31,60 @@ Takes `log10(Mstar [M⊙])`, redshift, and `SF::Bool` determining whether the st
 
 Returns U-V and V-J colors `(uv, vj)`.
 """
+# function uv_vj1(logMstar, z, SF::Bool; rng::AbstractRNG=default_rng())
+#     # This implementation is based on description in paper
+#     return if SF
+#         a0 = 0.48 * erf(logMstar - 10) + 1.15
+#         a1 = -0.28 + 0.25 * max(0, logMstar - 10.35)
+#         vj = a0 + a1 * min(z, 3.3) # V-J color for star-forming galaxies
+#         vj = min(vj, 1.7) # limit to <1.7
+#         vj = rand(rng, Normal(vj, 0.1)) # Add first error
+#         uv = 0.65 * vj + 0.45
+#         vj = rand(rng, Normal(vj, 0.12)) # Add extra error
+#         uv = rand(rng, Normal(uv, 0.12)) # Add extra error
+#         (uv, vj)
+#     else
+#         vj = 0.1 * (logMstar - 11) + 1.25
+#         vj = rand(rng, Normal(vj, 0.1)) # Add first error
+#         vj = max(min(vj, 1.45), 1.15) # Restrict 1.15 <= V-J <= 1.45
+#         uv = 0.88 * vj + 0.75
+#         vj = rand(rng, Normal(vj, 0.1)) # Add extra error
+#         uv = rand(rng, Normal(uv, 0.1)) # Add extra error
+#         (uv, vj)
+#     end
+# end
 function uv_vj(logMstar, z, SF::Bool; rng::AbstractRNG=default_rng())
-    return if SF
-        a0 = 0.48 * erf(logMstar - 10) + 1.15
-        a1 = -0.28 + 0.25 * max(0, logMstar - 10.35)
-        vj = a0 + a1 * min(z, 3.3) # V-J color for star-forming galaxies
-        vj = min(vj, 1.7) # limit to <1.7
-        vj = rand(rng, Normal(vj, 0.1)) # Add first error
-        uv = 0.65 * vj + 0.45
-        vj = rand(rng, Normal(vj, 0.12)) # Add extra error
-        uv = rand(rng, Normal(uv, 0.12)) # Add extra error
+    # This implementation is based on the code in the egg repository
+    uv, vj = if SF
+        a0 = 0.58 * erf(logMstar - 10) + 1.39
+        a1 = -0.34 + 0.3 * max(0, logMstar - 10.35)
+        vj = a0 + a1 * min(z, 3.3)
+        vj = min(vj, 2.0)
+        rnd_amp = 0.2 + (0.25 + 0.12 * clamp((z - 0.5) / 2.0, 0.0, 1.0)) *
+                max(1.0 - 2.0*abs(logMstar - (10.3 + 0.4 * erf(z - 1.5))), 0.0)
+        vj = rand(rng, Normal(vj, rnd_amp))
+
+        # Move in UVJ diagram according to UVJ vector
+        slope = 0.65
+        theta = atan(slope) # This can be simplified but don't care right now
+        vj = 0.0 + vj * cos(theta)
+        uv = 0.45 + vj * sin(theta)
+        vj = rand(rng, Normal(vj, 0.15))
+        uv = rand(rng, Normal(uv, 0.15))
         (uv, vj)
     else
         vj = 0.1 * (logMstar - 11) + 1.25
         vj = rand(rng, Normal(vj, 0.1)) # Add first error
         vj = max(min(vj, 1.45), 1.15) # Restrict 1.15 <= V-J <= 1.45
-        uv = 0.88 * vj + 0.75
+        uv = 0.88 * vj + 0.6
         vj = rand(rng, Normal(vj, 0.1)) # Add extra error
         uv = rand(rng, Normal(uv, 0.1)) # Add extra error
         (uv, vj)
     end
+    # Add additional color offset depending on redshift
+    uv += 0.4 * max((0.5 - z) / 0.5, 0.0)
+    vj += 0.2 * max((0.5 - z) / 0.5, 0.0)
+    return uv, vj
 end
 
 # SF is whether galaxy is star-forming or not
@@ -64,11 +98,16 @@ function egg(Mstar, z, SF::Bool;
     # Distributions for the bulge-to-total mass ratio
     BT = if SF
         rand(rng, LogNormal(log(exp10(-0.7 + 0.27 * (logMstar - 10))), 0.2 * logten))
+        # exp10(rand(rng, Normal(-0.7 + 0.27 * (logMstar - 10), 0.2)))
     else
         rand(rng, LogNormal(log(exp10(-0.3 + 0.1 * (logMstar - 10))), 0.2 * logten))
+        # exp10(rand(rng, Normal(-0.3 + 0.1 * (logMstar - 10), 0.2)))
     end
+    BT = clamp(BT, 0.0, 1.0)
     Mbulge = Mstar * BT
     Mdisk = Mstar - Mbulge
+    @check Mbulge >=0
+    @check Mdisk >= 0
 
     # Distributions for bulge, disk sizes
     Fz_disk = if z <= 1.7
@@ -86,7 +125,7 @@ function egg(Mstar, z, SF::Bool;
     α_R = 1 - 0.8 * log10(R50_disk / R50_bulge)
     BT_α = BT^α_R
     R50_tot = R50_disk * (1 - BT_α) + R50_bulge * BT_α
-    PA = rand(rng, Uniform(0, 360)) # Uniform position angle, shared between bulge and disk
+    PA = rand(rng, Uniform(-180, 180)) # Uniform position angle, shared between bulge and disk
 
     disk_SF = SF # Disks are SF if galaxy is SF
     bulge_SF = if ~SF # Bulge is quiescent if galaxy is quiescent
@@ -109,13 +148,13 @@ function egg(Mstar, z, SF::Bool;
     opt_λ_bulge, opt_sed_bulge = get_opt_sed(uv_bulge, vj_bulge, optlib)
     # Convert SED to units of erg Å^-1 cm^-2 s^-1
     # 1 * UnitfulAstro.Lsun / u"μm" / (4π * (10u"pc")^2) |> u"erg" / u"s" / u"cm^2" / u"angstrom"
-    opt_sed_disk .*= exp10(logMstar - m2l_cor) * 3.1993443f-11
-    opt_sed_bulge .*= exp10(logMstar - m2l_cor) * 3.1993443f-11
+    opt_sed_disk .*= exp10(log10(Mdisk) - m2l_cor) * 3.1993443f-11
+    opt_sed_bulge .*= exp10(log10(Mbulge) - m2l_cor) * 3.1993443f-11
     # Redshift the wavelengths
     opt_λ_disk .*= 1 + z
     opt_λ_bulge .*= 1 + z
 
-    # return (Mstar = Mstar, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge)
+    return (Mstar = Mstar, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge)
 end
 
 # function EGG(Mstar, z; rng::AbstractRNG=default_rng())
