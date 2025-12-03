@@ -8,7 +8,7 @@ using Random: Random, default_rng, AbstractRNG
 
 export SchechterMassFunction, DoubleSchechterMassFunction
 
-include("random.jl")
+include("utils.jl")
 include("Schechter.jl")
 include("EGG/EGG.jl")
 using .EGG

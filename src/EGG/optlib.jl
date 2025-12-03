@@ -15,6 +15,12 @@
 # - optlib.av is a 1D Vector with one value per usable template (the same indexing used by `idxmap`).
 # - The returned ised indices are 1-based indices into the compact list of usable templates
 #   (matching optlib.av), i.e. the same "flat" indexing used in the original C++ code.
+# 
+# Units:
+# Looks like wavelengths (lam) are in microns
+# SEDs are in solar luminosity per unit stellar mass 
+# (L_sun per unit-wavelength per Msun — effectively L_sun/Δλ per Msun); need to convert to physical,
+# EGG converts to μJy 
 
 """
     _check_lam(lam)
@@ -55,6 +61,9 @@ function _check_lam(lam)
     return true
 end
 
+# Returns the correction to the mass-to-light ratio in dex
+get_m2l_cor(z) = interp_lin(SVector(0.0,0.45,1.3,6.0,8.0), SVector(0.15,0.15,0.0,0.0,-0.6), z)
+
 struct OptLib
     # lam[uv, vj, λ]
     lam::Array{Float32,3}
@@ -64,12 +73,9 @@ struct OptLib
     use::BitMatrix
     # av[uv, vj]
     av::Matrix{Float32}
-    # bin descriptors for U-V and V-J. These may be either:
-    #  - a vector of bin edges of length nbins+1, OR
-    #  - a vector of bin centers of length nbins
-    buv::Vector{Float32}   # U-V bin definition
-    bvj::Vector{Float32}   # V-J bin definition
-    # derived index map built by build_idxmap!
+    buv::Vector{Float32}   # U-V bin definition, length(nbins) + 1
+    bvj::Vector{Float32}   # V-J bin definition, length(nbins) + 1
+    # derived index map built by build_idxmap
     idxmap::Matrix{Int}   # idxmap[u,v] -> used-template index (1-based) or 0 if unused
     used_coords::Vector{Tuple{Int,Int}} # reverse map: used_coords[ised] = (u,v)
 end
@@ -77,9 +83,8 @@ function OptLib(fname::AbstractString)
     FITS(fname, "r") do f
         hdu = f[2]
         lam = read(hdu, "LAM")[:,:,:,1]
-        # @argcheck map(==(lam
         sed = read(hdu, "SED")[:,:,:,1]
-        buv = read(hdu, "BUV")# [:,:,1]
+        buv = read(hdu, "BUV")
         buv = vcat(buv[:,1,1], buv[end,2,1]) # Reduce to vector of bin edges, length nbins + 1
         @argcheck issorted(buv)
         bvj = read(hdu, "BVJ")[:,:,1]
@@ -93,24 +98,7 @@ function OptLib(fname::AbstractString)
     end
 end
 
-# Build idxmap and used_coords. Must be called once after creating OptLib (or when optlib.use changes).
-# function build_idxmap!(opt::OptLib)
-#     nu, nv = size(opt.use)
-#     opt.idxmap = zeros(Int, nu, nv)
-#     used = Vector{Tuple{Int,Int}}()
-#     k = 1
-#     for u in 1:nu, v in 1:nv
-#         if opt.use[u,v]
-#             opt.idxmap[u,v] = k
-#             push!(used, (u,v))
-#             k += 1
-#         else
-#             opt.idxmap[u,v] = 0
-#         end
-#     end
-#     opt.used_coords = used
-#     return opt
-# end
+# Build idxmap and used_coords for OptLib
 function build_idxmap(USE::BitMatrix)
     nu, nv = size(USE)
     idxmap = zeros(Int, nu, nv)
@@ -128,62 +116,7 @@ function build_idxmap(USE::BitMatrix)
     return idxmap, used
 end
 
-# Convert a vector of bin edges / centers into a function that finds bin index.
-# Returns 0 if value is outside all bins.
-# Behavior:
-# - If `edges` length == nbins+1 => interpret as explicit edges: bins are [edges[i], edges[i+1])
-#   for i=1..nbins-1 and [edges[end-1], edges[end]] for last bin (right inclusive).
-# - If `edges` length == nbins => interpret as bin centers. Bins are midpoints between centers.
-# function find_bin(value::Real, edges::AbstractVector{<:Real})
-#     n = length(edges)
-#     if n == 0
-#         return 0
-#     end
-#     # If edges are edges (nbins+1)
-#     # detect if the length is at least 2 and represents edges by checking monotonicity
-#     # (we accept either representation - edges or centers)
-#     # Here we decide by whether length(edges) == nbins+1 is plausible (we can't know nbins).
-#     # We'll choose: if length(edges) >= 2 and the values could be edges,
-#     # we check both possibilities: try edges-as-edges first if n >= 2.
-#     # For robustness, support both via heuristics below.
-
-#     # Heuristic: if there are more than 2 entries and spacing is non-uniform, treat as edges.
-#     if n >= 2
-#         # if edges likely represent bin-edges (length bins+1)
-#         # we'll treat as edges when consecutive spacing suggests boundaries:
-#         # (this is safe in practice for typical UVJ grids).
-#         # Implement direct "edges" behavior:
-#         for i in 1:(n-1)
-#             left = edges[i]
-#             right = edges[i+1]
-#             if (i < n-1 && value >= left && value < right) || (i == n-1 && value >= left && value <= right)
-#                 return i
-#             end
-#         end
-#     end
-
-#     # If we didn't find it as edges, treat as centers:
-#     # Build midpoints
-#     if n == 1
-#         # single center => only one bin
-#         return 1
-#     end
-#     mid = Vector{Float64}(undef, n-1)
-#     for i in 1:(n-1)
-#         mid[i] = 0.5*(edges[i] + edges[i+1])
-#     end
-#     # bins:
-#     # (-Inf, mid[1]) -> bin1
-#     if value < mid[1]
-#         return 1
-#     end
-#     for i in 2:(n-1)
-#         if value < mid[i]
-#             return i
-#         end
-#     end
-#     return n   # value >= mid[end] -> last bin
-# end
+# Find which bin in `edges` the provided `value` falls into
 function find_bin(value::Real, edges::AbstractVector{<:Real})
     Base.require_one_based_indexing(edges)
     n = length(edges)
@@ -313,22 +246,32 @@ function get_sed_uvj(uv, vj, optlib::OptLib; doprint::Bool=false)
 end
 
 """
-    get_opt_sed(optlib::OptLib, Mstar::Real, ised::Int)
+    get_opt_sed(uv, vj, optlib::OptLib)
+Retrieves optical SED from `optlib` for galaxy with provided `uv` U-V color and `vj` V-J color. 
 
-Return `(lam, sed)` for the requested usable-template index `ised` (1-based).
-- `lam` and `sed` are Vector{Float32}.
-- `sed` is scaled by `Mstar`, provided in solar masses (i.e. templates are per unit stellar mass).
+Returns
+ - `lambda` wavelength in microns
+ - `sed` spectral energy distribution in L⊙ / μm / M⊙
+ - `Av` V-band extinction in magnitude of the 
 """
-function get_opt_sed(uv, vj, optlib::OptLib, Mstar::Real)
+function get_opt_sed(uv, vj, optlib::OptLib)
     ised = get_sed_uvj(uv, vj, optlib)
     @argcheck ised > 0
     if ised > length(optlib.used_coords)
         error("`ised` $ised out of range")
     end
     (u, v) = optlib.used_coords[ised]
-    lam = optlib.lam[:, u, v]
-    sed = optlib.sed[:, u, v]
-    sed .*= Mstar
+    lam = optlib.lam[:, u, v] # units of μm
+    sed = optlib.sed[:, u, v] # units of L⊙ / μm / M⊙
     Av = optlib.av[u, v]
     return lam, sed, Av
+    # sed .*= Mstar # Units of L⊙ / μm
+    # # 1 * UnitfulAstro.Lsun / u"μm" |> u"W" / u"m" = 3.828e32 W m^-1
+    # # sed .*= 3.828f32 # Units of W / m
+    # # 1 * UnitfulAstro.Lsun / u"μm" / (4π * (10u"pc")^2) |> u"erg" / u"s" / u"cm^2" / u"angstrom"
+    # # F_λ = sed .* 3.1993443f-11 # Units of erg Å^-1 cm^-2 s^-1
+    # sed .*= 3.1993443f-11 # Units of erg Å^-1 cm^-2 s^-1
+    # return lam, sed, Av
 end
+
+# Computing magnitude takes ~20μs per filter

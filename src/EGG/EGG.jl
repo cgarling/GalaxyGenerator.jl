@@ -5,16 +5,25 @@ Contains code to generate galaxy catalogs using methods similar to those used in
 """
 module EGG
 
+using ..GalaxyGenerator: interp_lin
+
 using ArgCheck: @argcheck, @check
+using DataInterpolations: LinearInterpolation
 using Distributions: LogNormal, Normal, Uniform
 using FITSIO: FITS
 using IrrationalConstants: logten
 using Random: Random, default_rng, AbstractRNG
 using SpecialFunctions: erf
+using StaticArrays: SVector
+using Statistics: mean
 
 export egg
 
 include("optlib.jl")
+# Load default optical SED library
+const optlib = OptLib(joinpath(@__DIR__, "data", "opt_lib_fast.fits"))
+
+include("IGM.jl") # IGM attenuation models
 
 """
     uv_vj(logMstar, z, SF::Bool)
@@ -45,7 +54,11 @@ function uv_vj(logMstar, z, SF::Bool; rng::AbstractRNG=default_rng())
 end
 
 # SF is whether galaxy is star-forming or not
-function egg(Mstar, z, SF::Bool; rng::AbstractRNG=default_rng()) 
+function egg(Mstar, z, SF::Bool; 
+    rng::AbstractRNG=default_rng(), 
+    optlib::OptLib=optlib,
+    igm::IGMAttenuation=Inoue2014IGM())
+
     logMstar = log10(Mstar)
     log1pz = log1p(z) / logten # same as log10(z + 1)
     # Distributions for the bulge-to-total mass ratio
@@ -90,7 +103,19 @@ function egg(Mstar, z, SF::Bool; rng::AbstractRNG=default_rng())
     uv_disk, vj_disk = uv_vj(logMstar, z, disk_SF)
     uv_bulge, vj_bulge = uv_vj(logMstar, z, bulge_SF)
 
-    return (Mstar = Mstar, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge)
+    # Optical SEDs; SEDs returned in units of L⊙ / μm / M⊙
+    m2l_cor = get_m2l_cor(z) # M/L correction in dex
+    opt_λ_disk, opt_sed_disk = get_opt_sed(uv_disk, vj_disk, optlib)
+    opt_λ_bulge, opt_sed_bulge = get_opt_sed(uv_bulge, vj_bulge, optlib)
+    # Convert SED to units of erg Å^-1 cm^-2 s^-1
+    # 1 * UnitfulAstro.Lsun / u"μm" / (4π * (10u"pc")^2) |> u"erg" / u"s" / u"cm^2" / u"angstrom"
+    opt_sed_disk .*= exp10(logMstar - m2l_cor) * 3.1993443f-11
+    opt_sed_bulge .*= exp10(logMstar - m2l_cor) * 3.1993443f-11
+    # Redshift the wavelengths
+    opt_λ_disk .*= 1 + z
+    opt_λ_bulge .*= 1 + z
+
+    # return (Mstar = Mstar, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge)
 end
 
 # function EGG(Mstar, z; rng::AbstractRNG=default_rng())
