@@ -1,6 +1,7 @@
 using GalaxyGenerator
 using Test
+using SafeTestsets: @safetestset
 
 @testset "GalaxyGenerator.jl" begin
-    # Write your tests here.
+    @safetestset "EGG Module" include("egg_tests.jl")
 end

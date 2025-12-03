@@ -6,14 +6,19 @@ Base.Broadcast.broadcastable(m::IGMAttenuation) = Ref(m)
 `transmission(::NoIGM, z, λ_r)` always returns `one(z)`, adding no attenuation.
 """
 struct NoIGM <: IGMAttenuation end
+"""
+    transmission(model::IGMAttenuation, z, λ_r)
+Returns the IGM transmission for light emitted at rest wavelength `λ_r` (in microns) at redshift `z` given the provided IGM transmission model `model`.
+"""
+function transmission end
 transmission(::NoIGM, z, λ_r) = one(z)
 
 """
-`transmission(::Madau1995IGM, z, λ_r)` returns Madau+95 IGM transmission for wavlength bands for rest-frame wavelength `λ_r` (in microns) emitted at redshift `z`.
+`transmission(::Madau1995IGM, z, λ_r)` returns the Madau+95 IGM transmission for wavlength bands for rest-frame wavelength `λ_r` (in microns) emitted at redshift `z`.
 """
 struct Madau1995IGM <: IGMAttenuation end
 
-"""Madau+95 Lyman-series wavelengths."""
+"""Madau+95 Lyman-series wavelengths in Angstroms."""
 const madau_lyw = (1215.67, 1025.72, 972.537, 949.743, 937.803,
         930.748, 926.226, 923.150, 920.963, 919.352,
         918.129, 917.181, 916.429, 915.824, 915.329,
@@ -24,8 +29,9 @@ const madau_lycoeff = (0.0036, 0.0017, 0.0011846, 0.0009410, 0.0007960,
         0.0006967, 0.0006236, 0.0005665, 0.0005200, 0.0004817,
         0.0004487, 0.0004200, 0.0003947, 0.0003720, 0.0003520,
         0.0003334, 0.00031644)
-        
+
 function transmission(::Madau1995IGM, z, λ_r)
+    λ_r *= 1e4 # Convert from input microns to Angstroms
     lylim   = 911.75
     a_metal = 0.0017
 
@@ -36,9 +42,7 @@ function transmission(::Madau1995IGM, z, λ_r)
         @warn "Madau1995IGM model has poor performance at short wavelengths. As a precaution, this function will return the transmission value evaluated at λ_rest = 729.4 Å." maxlog=1
         return transmission(Madau1995IGM(), z, lylim * 0.8) # z1 = xc = λ_r * z1 / lylim, solve for λ_r
     end
-    # ----------------------------------------------------------
-    # Ly-series line blanketing
-    # ----------------------------------------------------------
+    # Lyman series line blanketing
     tau = 0.0
 
     for i in eachindex(madau_lyw)
@@ -52,9 +56,7 @@ function transmission(::Madau1995IGM, z, λ_r)
         end
     end
 
-    # ----------------------------------------------------------
     # LyC absorption (λ < 912 Å)
-    # ----------------------------------------------------------
     if λ_r < lylim
         tau +=
             0.25 * xc^3 * (z1^0.46 - xc^0.46) +
