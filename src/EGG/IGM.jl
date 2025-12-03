@@ -1,18 +1,36 @@
 abstract type IGMAttenuation end
 Base.Broadcast.broadcastable(m::IGMAttenuation) = Ref(m)
 
-# struct ConstantIGM end
+# Generic methods
+"""
+    transmission(model::IGMAttenuation, z, λ_r)
+Returns the IGM transmission for light emitted at rest wavelength `λ_r` (in microns) at redshift `z` given the provided IGM transmission model `model`. Defined as `exp(-τ)` where `τ` is the optical depth. Generic implementation is `transmission(tau(model, z, λ_r))`.
+"""
+transmission(model::IGMAttenuation, z, λ_r) = transmission(tau(model, z, λ_r))
+
+"""
+    transmission(tau) = exp(-tau)
+Convert optical depth (`tau`) to transmission (`exp(-tau)`).
+"""
+transmission(tau) = exp(-tau)
+
+#############
+# NoIGM model
 """
 `transmission(::NoIGM, z, λ_r)` always returns `one(z)`, adding no attenuation.
 """
 struct NoIGM <: IGMAttenuation end
-"""
-    transmission(model::IGMAttenuation, z, λ_r)
-Returns the IGM transmission for light emitted at rest wavelength `λ_r` (in microns) at redshift `z` given the provided IGM transmission model `model`.
-"""
-function transmission end
-transmission(::NoIGM, z, λ_r) = one(z)
 
+"""
+    tau(model::IGMAttenuation, z, λ_r)
+Returns the IGM optical depth for light emitted at rest wavelength `λ_r` (in microns) at redshift `z` given the provided IGM transmission model `model`.
+"""
+function tau end
+tau(::NoIGM, z, λ_r) = zero(z)
+transmission(::NoIGM, z, λ_r) = one(z) # Define this directly to avoid the generic exp(-tau) method
+
+#################
+# Madau1995 model 
 """
 `transmission(::Madau1995IGM, z, λ_r)` returns the Madau+95 IGM transmission for wavlength bands for rest-frame wavelength `λ_r` (in microns) emitted at redshift `z`.
 """
@@ -30,7 +48,7 @@ const madau_lycoeff = (0.0036, 0.0017, 0.0011846, 0.0009410, 0.0007960,
         0.0004487, 0.0004200, 0.0003947, 0.0003720, 0.0003520,
         0.0003334, 0.00031644)
 
-function transmission(::Madau1995IGM, z, λ_r)
+function tau(::Madau1995IGM, z, λ_r)
     λ_r *= 1e4 # Convert from input microns to Angstroms
     lylim   = 911.75
     a_metal = 0.0017
@@ -65,7 +83,7 @@ function transmission(::Madau1995IGM, z, λ_r)
             0.023 * (z1^1.68 - xc^1.68)
     end
     # Convert τ to transmission and return
-    return min(1.0, exp(-tau))
+    return max(0.0, tau)
 end
 
 

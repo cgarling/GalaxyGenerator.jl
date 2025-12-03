@@ -11,11 +11,14 @@ using Test
         for z in z_arr
             @test all(GG.EGG.transmission.(s, z, x) .== 1)
             @test all(GG.EGG.transmission.(s, z, x_u) .== 1)
+            @test all(GG.EGG.tau.(s, z, x) .== 0)
+            @test all(GG.EGG.tau.(s, z, x_u) .== 0)
         end
     end
     @testset "Madau1995IGM" begin
         s = GG.EGG.Madau1995IGM()
         @test isapprox(GG.EGG.transmission(s, 3.5, 0.11), 0.617783510515702; rtol=1e-5)
+        @test isapprox(GG.EGG.tau(s, 3.5, 0.11), -log(0.617783510515702); rtol=1e-5)
         for z in z_arr
             r = GG.EGG.transmission.(s, z, x)
             @test r isa Vector{Float64}
