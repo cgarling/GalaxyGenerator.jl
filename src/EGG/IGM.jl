@@ -9,41 +9,6 @@ transmission(::NoIGM, z) = one(z)
 `transmission(::Madau1995IGM, z)` returns a 3–element vector with Madau+95 IGM transmission efficiency for wavlength bands `[ <912Å band>, <920–1015Å band>, <1050–1170Å band> ]`.
 """
 struct Madau1995IGM <: IGMAttenuation end
-    # ptau2::T
-    # ptau3::T
-# This implementation is based on the one in EGG, but it doesn't seem to replicate
-# Madau Figure 3 as well. GOing to try FSPS implementation
-# function transmission(::Madau1995IGM, z, λ_r) # λ in microns
-#     # T = promote_type(typeof(z), typeof(λ))
-#     λ_α = 0.1216 # Lyman α
-#     λ_β = 0.1026 # Lyman β
-#     λ_γ = 0.0973 # Lyman γ
-#     λ_δ = 0.095  # Lyman δ
-#     λ_L = 0.0912 # Lyman limit
-#     if λ_r < λ_L
-#         return 0.0 # No transmission shorter than Lyman limit
-#     end
-#     λ_o = λ_r * (1 + z)
-#     # Equation 12, optical depth due to Lyman-α forest
-#     # L_α_τ = if λ_β <= λ_r <= λ_α 
-#     #     0.0036 * (λ_o / λ_α)^3.46
-#     # else
-#     #     0.0
-#     # end
-#     # Equation 15, optical depth due to higher order Lyman series lines
-
-#     L_series_τ = if λ_r > 0.1170
-#         0.0
-#     elseif λ_L <= λ_r <= 0.1015
-#         1.7e-3*(λ_o/λ_β)^3.46 +
-#         1.2e-3*(λ_o/λ_γ)^3.46 +
-#         9.3e-4*(λ_o/λ_δ)^3.46
-#     else
-#         3.6e-3*(λ_o/λ_α)^3.46
-#     end
-#     # return exp(-(L_α_τ + L_series_τ))
-#     return exp(-L_series_τ)
-# end
 function transmission(::Madau1995IGM, z, λ_r)
     # Ly-series wavelengths and coefficients (Madau 1995)
     lyw = (1215.67, 1025.72, 972.537, 949.743, 937.803,
@@ -95,27 +60,6 @@ function transmission(::Madau1995IGM, z, λ_r)
     # Convert τ to transmission and return
     return min(1.0, exp(-tau))
 end
-# function transmission(::Madau1995IGM, z::T) where T
-#     # --- Band 1: <912Å (no flux)
-#     out1= 0
-
-#     # --- Band 2: 920–1015 Å (rest)
-#     l0 = 920*(1+z)
-#     l1 = 1015*(1+z)
-#     tl = range(l0, l1; length=100)
-#     ptau = @. exp(-1.7e-3*(tl/1026)^3.46 -
-#                   1.2e-3*(tl/972.5)^3.46 -
-#                   9.3e-4*(tl/950)^3.46)
-#     out2 = mean(ptau)
-
-#     # --- Band 3: 1050–1170 Å (rest)
-#     l0 = 1050*(1+z)
-#     l1 = 1170*(1+z)
-#     tl = range(l0, l1; length=100)
-#     ptau = @. exp(-3.6e-3*(tl/1216)^3.46)
-#     out3 = mean(ptau)
-#     return SVector{3,T}(out1, out2, out3)
-# end
 
 
 struct Inoue2014IGM <: IGMAttenuation end
