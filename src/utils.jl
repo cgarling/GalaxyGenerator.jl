@@ -87,3 +87,89 @@ function interp_log(x::AbstractVector, y::AbstractVector, t)
     t = log(t)
     return y0 + (y1 - y0) * (t - x0) / (x1 - x0)
 end
+
+"""
+    merge_add(x1, x2, y1, y2)
+
+Merge two SED-like templates `(x1,y1)` and `(x2,y2)` into a single `(x, y)` pair by summing
+the values where the wavelength grids overlap. If `x1 == x2`, the function simply returns `x1` and `y1 .+ y2`.
+
+Behavior:
+- Inputs must have length(x) == length(y) for each pair and should be sorted ascending.
+- When an x from one vector falls strictly before the first x of the other vector,
+  the other y is not extrapolated (no contribution).
+- When an x lies between two x values of the other vector, linear interpolation is used.
+- When x values are equal, the y values are summed directly.
+
+Returns `(xout, yout)`.
+"""
+function merge_add(x1::AbstractVector{T1}, x2::AbstractVector{T2},
+                   y1::AbstractVector{U1}, y2::AbstractVector{U2}) where {T1,T2,U1,U2}
+
+    if x1 == x2
+        return x1, y1 .+ y2
+    end
+    @assert length(x1) == length(y1) "x1 and y1 must have the same length"
+    @assert length(x2) == length(y2) "x2 and y2 must have the same length"
+    @assert issorted(x1) "x1 must be sorted ascending"
+    @assert issorted(x2) "x2 must be sorted ascending"
+
+    Tx = promote_type(T1, T2)
+    Ty = promote_type(U1, U2)
+
+    n1 = length(x1)
+    n2 = length(x2)
+
+    xout = Vector{Tx}()
+    sizehint!(xout, n1 + n2)
+    yout = Vector{Ty}()
+    sizehint!(yout, n1 + n2)
+
+    i1 = 1
+    i2 = 1
+
+    # generic linear interpolation
+    interp(y0, y1, x0, x1, x) = x1 == x0 ? y0 : y0 + (y1 - y0) * ((x - x0) / (x1 - x0))
+
+    while i1 <= n1 || i2 <= n2
+        if i1 > n1
+            push!(xout, convert(Tx, x2[i2]))
+            push!(yout, convert(Ty, y2[i2]))
+            i2 += 1
+        elseif i2 > n2
+            push!(xout, convert(Tx, x1[i1]))
+            push!(yout, convert(Ty, y1[i1]))
+            i1 += 1
+        else
+            x_a = x1[i1]
+            x_b = x2[i2]
+
+            if x_a < x_b
+                y_sum = y1[i1]
+                if i2 != 1
+                    y_sum = y_sum + interp(y2[i2-1], y2[i2], x2[i2-1], x2[i2], x_a)
+                end
+                push!(xout, convert(Tx, x_a))
+                push!(yout, convert(Ty, y_sum))
+                i1 += 1
+
+            elseif x_a > x_b
+                y_sum = y2[i2]
+                if i1 != 1
+                    y_sum = y_sum + interp(y1[i1-1], y1[i1], x1[i1-1], x1[i1], x_b)
+                end
+                push!(xout, convert(Tx, x_b))
+                push!(yout, convert(Ty, y_sum))
+                i2 += 1
+
+            else
+                push!(xout, convert(Tx, x_a))
+                push!(yout, convert(Ty, y1[i1] + y2[i2]))
+                i1 += 1
+                i2 += 1
+            end
+        end
+    end
+
+    return xout, yout
+end

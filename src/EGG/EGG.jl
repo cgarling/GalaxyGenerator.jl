@@ -5,7 +5,7 @@ Contains code to generate galaxy catalogs using methods similar to those used in
 """
 module EGG
 
-using ..GalaxyGenerator: interp_lin
+using ..GalaxyGenerator: interp_lin, merge_add
 
 using ArgCheck: @argcheck, @check
 using Cosmology: AbstractCosmology, distmod, Planck18
@@ -96,6 +96,7 @@ end
 # This method is called by the method below that also takes
 # PhotometricFilters and computes magnitudes 
 function egg(Mstar, z, SF::Bool; rng::AbstractRNG=default_rng())
+    Mstar, z = Float32(Mstar), Float32(z)
     logMstar = log10(Mstar)
     log1pz = log1p(z) / logten # same as log10(z + 1)
     # Distributions for the bulge-to-total mass ratio
@@ -107,7 +108,7 @@ function egg(Mstar, z, SF::Bool; rng::AbstractRNG=default_rng())
     BT = clamp(BT, 0.0, 1.0)
     Mbulge = Mstar * BT
     Mdisk = Mstar - Mbulge
-    @check Mbulge >=0
+    @check Mbulge >= 0
     @check Mdisk >= 0
 
     # Distributions for bulge, disk sizes
@@ -181,7 +182,7 @@ function egg(Mstar, z, SF::Bool; rng::AbstractRNG=default_rng())
         lir = 0.0
     end
 
-    return (Mstar = Mstar, sfr  =sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx)
+    return (Mstar = Mstar, sfr = sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx)
 end
 
 # This method takes 
@@ -191,9 +192,11 @@ function egg(Mstar, z, SF::Bool,
     cosmo::AbstractCosmology=Planck18,
     rng::AbstractRNG=default_rng(), 
     optlib::OptLib=optlib,
+    irlib::IRLib=irlib,
     igm::IGMAttenuation=Inoue2014IGM())
 
     @argcheck length(filters) == length(mag_sys)
+    Mstar, z = Float32(Mstar), Float32(z)
     dmod = distmod(cosmo, z)
 
     # Call above method to calculate galaxy properties
@@ -209,16 +212,33 @@ function egg(Mstar, z, SF::Bool,
     opt_sed_bulge .*= exp10(log10(r.Mbulge) - m2l_cor) * 3.1993443f-11
 
     # Get IR SED
-    # need_ir = 
-    # Merge optical and IR SEDs
-    if opt_λ_bulge == opt_λ_disk
-        sed = opt_sed_bulge .+ opt_sed_disk
-        λ = opt_λ_bulge # .* 1e4 # conver to angstroms
+    ir_result = get_ir_sed(r.Tdust, irlib)
+    ir_λ = ir_result.lam # microns
+    # Correct fpah, if necessary
+    fpah = if typeof(irlib) == CS17_IRLib
+        # r.lir / (ir_result.lir_dust * (1 - r.fpah) + ir_result.lir_pah * r.fpah)
+        clamp(1.0 / (1.0 - (ir_result.lir_pah - ir_result.l8_pah * r.ir8) /
+            (ir_result.lir_dust - ir_result.l8_dust * r.ir8)), 0.0, 1.0)
     else
-        error("bulge and disk wavelength arrays not the same.")
+        r.fpah # For some reason, EGG sets this to 0.04 despite having calculated it above
     end
+    Mdust = if typeof(irlib) == CS17_IRLib
+        r.lir / (ir_result.lir_dust * (1 - fpah) + ir_result.lir_pah * fpah)
+    else
+        r.lir / 1e3
+    end
+    ir_sed = if typeof(irlib) == CS17_IRLib
+        # CS_17 library is in units of L⊙ / μm / M⊙ of dust
+        (ir_result.dust .* (1 - fpah) .+ ir_result.pah .* r.fpah) .* Mdust .* 3.1993443f-11
+    else
+        ir_result.sed .* 3.1993443f-11 # Assume in L⊙ / μm
+    end
+
     # Generate emission lines
     # Add emission lines
+    # Merge optical and IR SEDs
+    opt_λ, opt_sed = merge_add(opt_λ_bulge, opt_λ_disk, opt_sed_bulge, opt_sed_disk)
+    λ, sed = merge_add(opt_λ, ir_λ, opt_sed, ir_sed)
     # Obtain rest-frame magnitudes
     # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
     mag_abs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) for i in eachindex(filters)]
@@ -229,7 +249,7 @@ function egg(Mstar, z, SF::Bool,
     # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
     mag_obs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) + dmod for i in eachindex(filters)]
 
-    return merge(r, (mag_abs = mag_abs, mag_obs = mag_obs))
+    return merge(r, (fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_obs = mag_obs))
     # mag_obs = [-25//10 * log10(mean_flux_density(filters[i], λ, sed)) - zeropoint_mag(filters[i], mag_sys[i]) for i in eachindex(filters)]
     # function _itp(f::AbstractFilter, λ)
     #     wave = wavelength(f)

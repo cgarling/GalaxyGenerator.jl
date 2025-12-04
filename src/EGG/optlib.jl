@@ -238,8 +238,9 @@ end
 
 # Both libraries ir_lib_ce01.fits and ir_lib_cs17.fits have one λ vector shared for all SEDs
 # This struct will be for cs17 library
-struct CS17_IRLib
-    lam::Vector{Float32}
+abstract type IRLib end
+struct CS17_IRLib <: IRLib
+    lam::Vector{Float32}  # microns
     dust::Matrix{Float32} # DUST[λ, Tdust] (per unit Mdust)
     pah::Matrix{Float32}  # pah[λ, Tdust] (per unit Mdust)
     tdust::Vector{Float32}
@@ -255,6 +256,7 @@ function CS17_IRLib(fname::AbstractString=joinpath(@__DIR__, "data", "ir_lib_cs1
         # Check that all columns are the same, then reduce lam to vector
         @check all(map(==(view(lam, :, 1)), eachcol(lam)))
         lam = lam[:,1]
+        @check issorted(lam)
         dust = read(hdu, "DUST")[:,:,1]
         pah = read(hdu, "PAH")[:,:,1]
         tdust = read(hdu, "TDUST")[:,1]
@@ -267,9 +269,13 @@ function CS17_IRLib(fname::AbstractString=joinpath(@__DIR__, "data", "ir_lib_cs1
     end
 end
 
+"""
+    get_ir_sed(tdust, irlib::CS17_IRLib)
+Retrieves the appropriate IR SED from the Schreiber+2017 library given the dust temperature `tdust` in Kelvin of a galaxy. If return value is `r`, `r.dust` contains dust SED and `r.pah` contains PAH sed, both in units of 
+"""
 function get_ir_sed(tdust, irlib::CS17_IRLib)
     i = find_bin(tdust, irlib.tdust)
-    dust = irlib.dust[:,1]
-    pah = irlib.pah[:,1]
-    return (dust = dust, pah = pah, lir_dust = irlib.lir_dust[i], lir_pah = irlib.lir_pah[i], l8_dust = irlib.l8_dust[i], l8_pah = irlib.l8_pah[i])
+    dust = view(irlib.dust,:,1)
+    pah = view(irlib.pah,:,1)
+    return (lam = irlib.lam, dust = dust, pah = pah, lir_dust = irlib.lir_dust[i], lir_pah = irlib.lir_pah[i], l8_dust = irlib.l8_dust[i], l8_pah = irlib.l8_pah[i])
 end
