@@ -8,15 +8,17 @@ module EGG
 using ..GalaxyGenerator: interp_lin
 
 using ArgCheck: @argcheck, @check
+using Cosmology: AbstractCosmology, distmod, Planck18
 using DataInterpolations: LinearInterpolation
 using Distributions: LogNormal, Normal, Uniform
 using FITSIO: FITS
 using IrrationalConstants: logten
-using PhotometricFilters: AbstractFilter, magnitude
+using PhotometricFilters: AbstractFilter, magnitude, MagnitudeSystem, mean_flux_density, zeropoint_mag, detector_type, wavelength, throughput
 using Random: Random, default_rng, AbstractRNG
 using SpecialFunctions: erf
 using StaticArrays: SVector
 using Statistics: mean
+import Unitful as u
 
 export egg
 
@@ -89,11 +91,10 @@ function uv_vj(logMstar, z, SF::Bool, ; rng::AbstractRNG=default_rng())
 end
 
 # SF is whether galaxy is star-forming or not
-function egg(Mstar, z, SF::Bool, @nospecialize(filters::AbstractVector{<:AbstractFilter});
-    rng::AbstractRNG=default_rng(), 
-    optlib::OptLib=optlib,
-    igm::IGMAttenuation=Inoue2014IGM())
-
+# This implementation just generates simple galaxy properties
+# This method is called by the method below that also takes
+# PhotometricFilters and computes magnitudes 
+function egg(Mstar, z, SF::Bool; rng::AbstractRNG=default_rng())
     logMstar = log10(Mstar)
     log1pz = log1p(z) / logten # same as log10(z + 1)
     # Distributions for the bulge-to-total mass ratio
@@ -162,18 +163,6 @@ function egg(Mstar, z, SF::Bool, @nospecialize(filters::AbstractVector{<:Abstrac
     uv_disk, vj_disk = uv_vj(logMstar, z, disk_SF)
     uv_bulge, vj_bulge = uv_vj(logMstar, z, bulge_SF)
 
-    # Get optical SEDs; SEDs returned in units of L⊙ / μm / M⊙
-    m2l_cor = get_m2l_cor(z) # M/L correction in dex
-    opt_λ_disk, opt_sed_disk = get_opt_sed(uv_disk, vj_disk, optlib)
-    opt_λ_bulge, opt_sed_bulge = get_opt_sed(uv_bulge, vj_bulge, optlib)
-    # Convert SED to units of erg Å^-1 cm^-2 s^-1
-    # 1 * UnitfulAstro.Lsun / u"μm" / (4π * (10u"pc")^2) |> u"erg" / u"s" / u"cm^2" / u"angstrom"
-    opt_sed_disk .*= exp10(log10(Mdisk) - m2l_cor) * 3.1993443f-11
-    opt_sed_bulge .*= exp10(log10(Mbulge) - m2l_cor) * 3.1993443f-11
-    # Redshift the wavelengths
-    opt_λ_disk .*= 1 + z
-    opt_λ_bulge .*= 1 + z
-
     # IR properties
     tdust_ms = 32.13 + 4.6 * (z - 2) # T_dust main sequence value at z
     tdust = tdust_ms + 10.1 * rsb # Starbursts are warmer
@@ -191,15 +180,61 @@ function egg(Mstar, z, SF::Bool, @nospecialize(filters::AbstractVector{<:Abstrac
         lir = 0.0
     end
 
+    return (Mstar = Mstar, sfr  =sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx)
+end
+
+# This method takes 
+function egg(Mstar, z, SF::Bool, 
+    @nospecialize(filters::AbstractVector{<:AbstractFilter}),
+    @nospecialize(mag_sys::AbstractVector{<:MagnitudeSystem});
+    cosmo::AbstractCosmology=Planck18,
+    rng::AbstractRNG=default_rng(), 
+    optlib::OptLib=optlib,
+    igm::IGMAttenuation=Inoue2014IGM())
+
+    @argcheck length(filters) == length(mag_sys)
+    dmod = distmod(cosmo, z)
+
+    # Call above method to calculate galaxy properties
+    r = egg(Mstar, z, SF; rng = rng)
+
+    # Get optical SEDs; SEDs returned in units of L⊙ / μm / M⊙, λ in μm
+    m2l_cor = get_m2l_cor(z) # M/L correction in dex
+    opt_λ_disk, opt_sed_disk = get_opt_sed(r.uv_disk, r.vj_disk, optlib)
+    opt_λ_bulge, opt_sed_bulge = get_opt_sed(r.uv_bulge, r.vj_bulge, optlib)
+    # Convert SED to units of erg Å^-1 cm^-2 s^-1
+    # 1 * UnitfulAstro.Lsun / u"μm" / (4π * (10u"pc")^2) |> u"erg" / u"s" / u"cm^2" / u"angstrom"
+    opt_sed_disk .*= exp10(log10(r.Mdisk) - m2l_cor) * 3.1993443f-11
+    opt_sed_bulge .*= exp10(log10(r.Mbulge) - m2l_cor) * 3.1993443f-11
+
     # Get IR SED
     # Merge optical and IR SEDs
+    if opt_λ_bulge == opt_λ_disk
+        sed = opt_sed_bulge .+ opt_sed_disk
+        λ = opt_λ_bulge # .* 1e4 # conver to angstroms
+    else
+        error("bulge and disk wavelength arrays not the same.")
+    end
     # Generate emission lines
     # Add emission lines
     # Obtain rest-frame magnitudes
+    # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
+    mag_abs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) for i in eachindex(filters)]
+
     # Apply IGM absorption, MW dust absorption
     # Redshift SED, obtain observed magnitudes
+    λ .*= 1 + z
+    # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
+    mag_obs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) + dmod for i in eachindex(filters)]
 
-    return (Mstar = Mstar, sfr=sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx)
+    return merge(r, (mag_abs = mag_abs, mag_obs = mag_obs))
+    # mag_obs = [-25//10 * log10(mean_flux_density(filters[i], λ, sed)) - zeropoint_mag(filters[i], mag_sys[i]) for i in eachindex(filters)]
+    # function _itp(f::AbstractFilter, λ)
+    #     wave = wavelength(f)
+    #     λv = @view λ[searchsortedfirst(λ, first(wave)):searchsortedlast(λ, last(wave))]
+
+    # mag_obs = [-25//10 * log10(mean_flux_density(λ, sed, [interp_lin(wavelength(filters[i]), throughput(filters[i]), j * u.angstrom) for j in λ], detector_type(filters[i]))) - zeropoint_mag(filters[i], mag_sys[i]) for i in eachindex(filters)]
+
 end
 
 # function EGG(Mstar, z; rng::AbstractRNG=default_rng())
