@@ -161,11 +161,31 @@ function egg(Mstar, z, SF::Bool;
     end
     rsb = sfr - sfrms # Ratio of SFR / SFR_MS
     sfr = exp10(sfr) # Convert to linear units
+
     # IRX = log10(L_IR / L_UV)
     irx = (0.45 * min(z, 3.0) + 0.35) * (logMstar - 10.5) + 1.2
     irx = exp10(isnothing(rng) ? irx : rand(rng, Normal(irx, 0.4)))
     sfr_ir = sfr / (1 + 1 / irx)
     sfr_uv = sfr / (1 + irx)
+
+    # Metallicity
+    # oh = 9.07
+    # mu32 = (logMstar - 0.2) - 0.32 * (log10(sfr) - 0.2)
+    # oh = mu32 < 10.36 ? 8.9 + 0.47 * (mu32 - 10) : oh
+    # oh -= 8.69 # In solar metallicity
+    # Broken FMR (Bethermin+16), tweaked to reproduce [OIII]/Hbeta @ z=2 (Dickey+16)
+    # oh = z > 1 ? oh - 0.2 * clamp(z - 1, 0.0, 1.0) : oh
+    # oh = clamp(oh, 8.69 - 0.6, 8.69 + 1.0)
+
+    # Use Jain2025 redshift-dependent model
+    # _M0 = 9.72 + 2.63 * (z + 1) # Redshift-dependent turnover mass
+    # oh = 8.78 - 0.25 / 1.2 * log1p((Mstar / _M0)^-1.2) / logten
+    
+    # Use Sanders2021 redshift-dependent FMR model
+    μα = logMstar - 0.6 * log10(sfr) # Equation 9
+    _y = μα - 10
+    _y2 = _y^2
+    oh = 8.8 + 0.188 * _y - 0.22 * _y2 - 0.0531 * _y2 * _y
 
     # Optical colors
     uv_disk, vj_disk = uv_vj(logMstar, z, disk_SF; rng=rng)
@@ -189,7 +209,7 @@ function egg(Mstar, z, SF::Bool;
         lir = 0.0
     end
 
-    return (Mstar = Mstar, sfr = sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx)
+    return (Mstar = Mstar, sfr = sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx, OH = oh)
 end
 
 # This method takes 
@@ -221,6 +241,7 @@ function egg(Mstar, z, SF::Bool,
     # Get IR SED
     ir_result = get_ir_sed(r.Tdust, irlib)
     ir_λ = ir_result.lam # microns
+
     # Correct fpah, if necessary
     fpah = if typeof(irlib) == CS17_IRLib
         # r.lir / (ir_result.lir_dust * (1 - r.fpah) + ir_result.lir_pah * r.fpah)
@@ -229,17 +250,31 @@ function egg(Mstar, z, SF::Bool,
     else
         r.fpah # For some reason, EGG sets this to 0.04 despite having calculated it above
     end
+
+    # Calculate dust mass
     Mdust = if typeof(irlib) == CS17_IRLib
         r.lir / (ir_result.lir_dust * (1 - fpah) + ir_result.lir_pah * fpah)
     else
         r.lir / 1e3
     end
+
+    # Calculate final ir_sed in units of erg Å^-1 cm^-2 s^-1
     ir_sed = if typeof(irlib) == CS17_IRLib
         # CS_17 library is in units of L⊙ / μm / M⊙ of dust
         (ir_result.dust .* (1 - fpah) .+ ir_result.pah .* r.fpah) .* Mdust .* 3.1993443f-11
     else
         ir_result.sed .* 3.1993443f-11 # Assume in L⊙ / μm
     end
+
+    # Gas properties
+    # oh_solar = r.OH - 8.69 # in units of solar metallicity
+    # gdr = 2.23 - oh_solar  # gas-to-dust ratio too low here
+    # log10(gas-to-dust ratio) from Rémy-Ruyer+14
+    gdr = r.OH > 7.96 ? 2.21 + 1.0 * (8.69 - r.OH) : 0.96 + 3.08 * (8.69 - r.OH)
+    gdr = isnothing(rng) ? gdr : rand(rng, Normal(gdr, 0.04))
+    Mgas = Mdust * exp10(gdr) # gas mass in M⊙
+    MH2 = Mgas * 0.3 # assume 30% of gas is molecular
+    MH2 = isnothing(rng) ? MH2 : rand(rng, LogNormal(log(MH2), 0.2 * logten))
 
     # Generate emission lines
     # Add emission lines
@@ -258,7 +293,7 @@ function egg(Mstar, z, SF::Bool,
     # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
     mag_obs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) + dmod for i in eachindex(filters)]
 
-    return merge(r, (fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_obs = mag_obs))
+    return merge(r, (Mgas = Mgas, MH2 = MH2, fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_obs = mag_obs))
     # mag_obs = [-25//10 * log10(mean_flux_density(filters[i], λ, sed)) - zeropoint_mag(filters[i], mag_sys[i]) for i in eachindex(filters)]
     # function _itp(f::AbstractFilter, λ)
     #     wave = wavelength(f)
