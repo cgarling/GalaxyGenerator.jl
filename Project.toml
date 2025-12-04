@@ -6,6 +6,7 @@ authors = ["cgarling <chris.t.garling@gmail.com> and contributors"]
 [deps]
 ArgCheck = "dce04be8-c92d-5529-be00-80e4d2c0e197"
 Compat = "34da2185-b29b-5c13-b0c7-acf172513d20"
+Cosmology = "ed9d9147-8919-4a75-999c-a1043df61e62"
 DataInterpolations = "82cc6244-b520-54b8-b5a6-8a565e85f1d0"
 Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 FITSIO = "525bcba6-941b-5504-bd06-fd0dc1a4d2eb"
@@ -16,12 +17,10 @@ SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Trapz = "592b5752-818d-11e9-1e9a-2b8ca4a44cd1"
-
-[weakdeps]
 Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
-[extensions]
-GalaxyGeneratorUnitfulExt = ["Unitful"]
+[sources]
+Cosmology = {path = "../Cosmology.jl"}
 
 [compat]
 ArgCheck = "2"
