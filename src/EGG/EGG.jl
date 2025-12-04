@@ -24,7 +24,8 @@ export egg
 
 include("optlib.jl")
 # Load default optical SED library
-const optlib = OptLib(joinpath(@__DIR__, "data", "opt_lib_fast.fits"))
+const optlib = OptLib()
+const irlib = CS17_IRLib()
 
 include("IGM.jl") # IGM attenuation models
 
@@ -208,6 +209,7 @@ function egg(Mstar, z, SF::Bool,
     opt_sed_bulge .*= exp10(log10(r.Mbulge) - m2l_cor) * 3.1993443f-11
 
     # Get IR SED
+    # need_ir = 
     # Merge optical and IR SEDs
     if opt_λ_bulge == opt_λ_disk
         sed = opt_sed_bulge .+ opt_sed_disk

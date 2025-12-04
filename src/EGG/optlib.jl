@@ -79,7 +79,7 @@ struct OptLib
     idxmap::Matrix{Int}   # idxmap[u,v] -> used-template index (1-based) or 0 if unused
     used_coords::Vector{Tuple{Int,Int}} # reverse map: used_coords[ised] = (u,v)
 end
-function OptLib(fname::AbstractString)
+function OptLib(fname::AbstractString=joinpath(@__DIR__, "data", "opt_lib_fast.fits"))
     FITS(fname, "r") do f
         hdu = f[2]
         lam = read(hdu, "LAM")[:,:,:,1]
@@ -235,3 +235,41 @@ function get_opt_sed(uv, vj, optlib::OptLib)
 end
 
 # Computing magnitude takes ~20μs per filter
+
+# Both libraries ir_lib_ce01.fits and ir_lib_cs17.fits have one λ vector shared for all SEDs
+# This struct will be for cs17 library
+struct CS17_IRLib
+    lam::Vector{Float32}
+    dust::Matrix{Float32} # DUST[λ, Tdust] (per unit Mdust)
+    pah::Matrix{Float32}  # pah[λ, Tdust] (per unit Mdust)
+    tdust::Vector{Float32}
+    lir_dust::Vector{Float32}
+    lir_pah::Vector{Float32}
+    l8_dust::Vector{Float32}
+    l8_pah::Vector{Float32}
+end
+function CS17_IRLib(fname::AbstractString=joinpath(@__DIR__, "data", "ir_lib_cs17.fits"))
+    FITS(fname, "r") do f
+        hdu = f[2]
+        lam = read(hdu, "LAM")[:,:,1]
+        # Check that all columns are the same, then reduce lam to vector
+        @check all(map(==(view(lam, :, 1)), eachcol(lam)))
+        lam = lam[:,1]
+        dust = read(hdu, "DUST")[:,:,1]
+        pah = read(hdu, "PAH")[:,:,1]
+        tdust = read(hdu, "TDUST")[:,1]
+        @argcheck issorted(tdust)
+        lir_dust = read(hdu, "LIR_DUST")[:,1]
+        lir_pah = read(hdu, "LIR_PAH")[:,1]
+        l8_dust = read(hdu, "L8_DUST")[:,1]
+        l8_pah = read(hdu, "L8_PAH")[:,1]
+        return CS17_IRLib(lam, dust, pah, tdust, lir_dust, lir_pah, l8_dust, l8_pah)
+    end
+end
+
+function get_ir_sed(tdust, irlib::CS17_IRLib)
+    i = find_bin(tdust, irlib.tdust)
+    dust = irlib.dust[:,1]
+    pah = irlib.pah[:,1]
+    return (dust = dust, pah = pah, lir_dust = irlib.lir_dust[i], lir_pah = irlib.lir_pah[i], l8_dust = irlib.l8_dust[i], l8_pah = irlib.l8_pah[i])
+end
