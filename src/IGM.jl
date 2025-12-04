@@ -1,3 +1,9 @@
+module IGM
+
+import Unitful as u
+
+export IGMAttenuation, NoIGM, Madau1995IGM, Inoue2014IGM, transmission, tau
+
 abstract type IGMAttenuation end
 Base.Broadcast.broadcastable(m::IGMAttenuation) = Ref(m)
 
@@ -93,3 +99,5 @@ for T in (NoIGM, Madau1995IGM)
     @eval transmission(s::$T, z, λ_r::u.Length)= transmission(s, z, u.ustrip(u.μm, λ_r))
     @eval tau(s::$T, z, λ_r::u.Length)= tau(s, z, u.ustrip(u.μm, λ_r))
 end
+
+end # module IGM
