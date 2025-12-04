@@ -1,3 +1,13 @@
+# """
+#     distance_modulus(distance)
+# Finds distance modulus for distance in parsecs.
+
+# ```math
+# μ = 5 \\times \\log_{10}(d) - 5
+# ```
+# """
+# distance_modulus(distance) = 5 * log10(distance) - 5 
+
 """
     inverse_cdf!(y, x)
 Given `x` and `y` arrays that fulfill `f(x) = y`, compute and return an interpolator for the inverse CDF of the function `f(x)`. `y` is mutated in-place to contain the CDF.
@@ -37,7 +47,7 @@ The interpolated value of `y` corresponding to `t`.
 # Notes
 - If `t` is outside the range of `x`, the function throws an error.
 """
-function interp_lin(x::AbstractVector, y::AbstractVector, t::Real)
+function interp_lin(x::AbstractVector, y::AbstractVector, t)
     @argcheck length(x) == length(y) "x and y must have the same length"
     if (t <= x[1]) || (t >= x[end])
         throw(DomainError("Requested interpolation location outside bounds."))
@@ -65,7 +75,7 @@ The interpolated value of `y` corresponding to `t`.
 # Notes
 - If `t` is outside the range of `x`, the function throws an error.
 """
-function interp_log(x::AbstractVector, y::AbstractVector, t::Real)
+function interp_log(x::AbstractVector, y::AbstractVector, t)
     @argcheck length(x) == length(y) "x and y must have the same length"
     if (t <= x[1]) || (t >= x[end])
         throw(DomainError("Requested interpolation location outside bounds."))
