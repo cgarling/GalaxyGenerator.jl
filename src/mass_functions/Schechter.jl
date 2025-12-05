@@ -73,8 +73,8 @@ Calling an instance of `DoubleSchechterMassFunction` with a stellar mass (in sol
 These constructors support random sampling from the returned instance `s` via `rand(s)`, `rand(s, 1000)` and so on. For speed a look-up table of the inverse CDF is used for sampling; coverage of this look-up table is defined by the keyword arguments `mmin` and `mmax` which give the limits of the look-up table in solar masses. The number of elements in this look-up table is `npoints`; more points gives greater sampling accuracy at the cost of increased memory and decreased sampling speed. The default `npoints=1000` is typically sufficient.
 
 ```jldoctest
-julia> s = DoubleSchechterMassFunction(1.0, 1.2, 1e6, 1.0, 1.1, 1e7) # Basic instance
-DoubleSchechterMassFunction{Float64, Nothing}(SchechterMassFunction{Float64, Nothing}(1.0, 1.2, 1.0e6, nothing), SchechterMassFunction{Float64, Nothing}(1.0, 1.1, 1.0e7, nothing), nothing)
+julia> s = DoubleSchechterMassFunction(8.9e-4, -1.4, 1e11, 8.31e-5, 0.5, exp10(10.64))
+DoubleSchechterMassFunction{Float64, Nothing}(SchechterMassFunction{Float64, Nothing}(0.00089, -1.4, 1.0e11, nothing), SchechterMassFunction{Float64, Nothing}(8.31e-5, 0.5, 4.3651583224016655e10, nothing), nothing)
 
 julia> s(1e6) isa Float64 # Call to evaluate mass function
 true
