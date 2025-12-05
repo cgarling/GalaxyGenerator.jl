@@ -79,7 +79,7 @@ struct OptLib
     idxmap::Matrix{Int}   # idxmap[u,v] -> used-template index (1-based) or 0 if unused
     used_coords::Vector{Tuple{Int,Int}} # reverse map: used_coords[ised] = (u,v)
 end
-function OptLib(fname::AbstractString=joinpath(@__DIR__, "data", "opt_lib_fast.fits"))
+function OptLib(fname::AbstractString=joinpath(@__DIR__, "data", "opt_lib_fast_noigm.fits"))
     FITS(fname, "r") do f
         hdu = f[2]
         lam = read(hdu, "LAM")[:,:,:,1]
