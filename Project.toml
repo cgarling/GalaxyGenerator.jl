@@ -21,7 +21,7 @@ Trapz = "592b5752-818d-11e9-1e9a-2b8ca4a44cd1"
 Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
 
 [sources]
-Cosmology = {path = "../Cosmology.jl"}
+Cosmology = {url = "https://github.com/cgarling/Cosmology.jl", rev = "main"}
 
 [compat]
 ArgCheck = "2"
