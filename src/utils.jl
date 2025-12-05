@@ -32,7 +32,7 @@ end
 # end
 
 """
-    interp_lin(x, y, t)
+    interp_lin(x, y, t; extrapolate=false)
 
 Linearly interpolates the value of `y` as a function of `x` at the point `t`.
 
@@ -47,10 +47,20 @@ The interpolated value of `y` corresponding to `t`.
 # Notes
 - If `t` is outside the range of `x`, the function throws an error.
 """
-function interp_lin(x::AbstractVector, y::AbstractVector, t)
+function interp_lin(x::AbstractVector, y::AbstractVector, t; extrapolate=false)
     @argcheck length(x) == length(y) "x and y must have the same length"
-    if (t <= x[1]) || (t >= x[end])
-        throw(DomainError("Requested interpolation location outside bounds."))
+    if t < x[1]
+        if extrapolate
+            return y[1]  # Return the first value of y
+        else
+            throw(DomainError("Requested interpolation location outside bounds."))
+        end
+    elseif t > x[end]
+        if extrapolate
+            return y[end]  # Return the last value of y
+        else
+            throw(DomainError("Requested interpolation location outside bounds."))
+        end
     end
     # Find the interval that contains t
     i = searchsortedlast(x, t)
@@ -60,7 +70,7 @@ function interp_lin(x::AbstractVector, y::AbstractVector, t)
 end
 
 """
-    interp_log(x, y, t)
+    interp_log(x, y, t; extrapolate=false)
 
 Linearly interpolates the value of `y` as a function of `log(x)` at the point `log(t)`. For some types of data, you would rather interpolate in `log(x)` than `x` because `log(x)` is smoother, reducing interpolation error. This function computes only the logarithms of the `x` values that it needs for the interpolation, avoiding the need to precompute `log.(x)`.
 
@@ -75,10 +85,20 @@ The interpolated value of `y` corresponding to `t`.
 # Notes
 - If `t` is outside the range of `x`, the function throws an error.
 """
-function interp_log(x::AbstractVector, y::AbstractVector, t)
+function interp_log(x::AbstractVector, y::AbstractVector, t; extrapolate=false)
     @argcheck length(x) == length(y) "x and y must have the same length"
-    if (t <= x[1]) || (t >= x[end])
-        throw(DomainError("Requested interpolation location outside bounds."))
+    if t < x[1]
+        if extrapolate
+            return y[1]  # Return the first value of y
+        else
+            throw(DomainError("Requested interpolation location outside bounds."))
+        end
+    elseif t > x[end]
+        if extrapolate
+            return y[end]  # Return the last value of y
+        else
+            throw(DomainError("Requested interpolation location outside bounds."))
+        end
     end
     # Find the interval that contains t
     i = searchsortedlast(x, t)
