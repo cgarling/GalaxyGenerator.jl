@@ -205,9 +205,7 @@ function egg(Mstar, z, SF::Bool;
     ir8 = clamp(ir8, 0.48, 27.5) # range allowed in IR library
     lir = sfr_ir / 1.72e-10 # Infrared luminosity from 8 to 1000 μm in L⊙
     fpah = clamp(1 / (1 - (331 - 691 * ir8) / (193 - 6.98 * ir8)), 0.0, 1.0)
-    if !isfinite(lir)
-        lir = 0.0
-    end
+    lir = isfinite(lir) ? lir : 0.0
 
     return (Mstar = Mstar, sfr = sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx, OH = oh)
 end
@@ -262,7 +260,7 @@ function egg(Mstar, z, SF::Bool,
     # Calculate final ir_sed in units of erg Å^-1 cm^-2 s^-1
     ir_sed = if typeof(irlib) == CS17_IRLib
         # CS_17 library is in units of L⊙ / μm / M⊙ of dust
-        (ir_result.dust .* (1 - fpah) .+ ir_result.pah .* r.fpah) .* Mdust .* 3.1993443f-11
+        (ir_result.dust .* (1 - fpah) .+ ir_result.pah .* fpah) .* Mdust .* 3.1993443f-11
     else
         ir_result.sed .* 3.1993443f-11 # Assume in L⊙ / μm
     end
@@ -310,7 +308,12 @@ function egg(Mstar, z, SF::Bool,
     mag_abs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) for i in eachindex(filters)]
 
     # Apply IGM absorption, MW dust absorption
-    tau_igm = tau.(igm, λ, z) # This is working, but expensive ~ 1 ms for full SED
+    tau_igm = tau.(igm, z, λ) # This is working, but expensive ~ 1 ms for full SED
+    A_λ = 0.0 # Get MW extinction
+    tau_MW = A_λ / (2.5 * log10(ℯ)) # The constant is ~1.086
+    τ = tau_igm # in place
+    τ .= tau_igm .+ tau_MW
+    sed .*= exp.(-τ)
     # In EGG, IGM absorption is only applied in 3 wavelength bins, I think
     # we will do full transmission over the entire SED. For this reason EGG
     # has to compute IGM transmission separately for the lines and for the binned SED,
@@ -321,7 +324,7 @@ function egg(Mstar, z, SF::Bool,
     # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
     mag_obs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) + dmod for i in eachindex(filters)]
 
-    return merge(r, (Mgas = Mgas, MH2 = MH2, fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_obs = mag_obs))
+    return merge(r, (Mgas = Mgas, MH2 = MH2, fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_obs = mag_obs, λ = λ, sed = sed))
     # mag_obs = [-25//10 * log10(mean_flux_density(filters[i], λ, sed)) - zeropoint_mag(filters[i], mag_sys[i]) for i in eachindex(filters)]
     # function _itp(f::AbstractFilter, λ)
     #     wave = wavelength(f)
