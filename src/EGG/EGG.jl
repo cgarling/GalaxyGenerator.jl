@@ -224,6 +224,7 @@ function egg(Mstar, z, SF::Bool,
 
     @argcheck length(filters) == length(mag_sys)
     Mstar, z = Float32(Mstar), Float32(z)
+    logMstar = log10(Mstar)
     dmod = distmod(cosmo, z)
 
     # Call above method to calculate galaxy properties
@@ -231,12 +232,12 @@ function egg(Mstar, z, SF::Bool,
 
     # Get optical SEDs; SEDs returned in units of L⊙ / μm / M⊙, λ in μm
     m2l_cor = get_m2l_cor(z) # M/L correction in dex
-    opt_λ_disk, opt_sed_disk = get_opt_sed(r.uv_disk, r.vj_disk, optlib)
-    opt_λ_bulge, opt_sed_bulge = get_opt_sed(r.uv_bulge, r.vj_bulge, optlib)
+    λ_disk, sed_disk, Av_disk = get_opt_sed(r.uv_disk, r.vj_disk, optlib)
+    λ_bulge, sed_bulge, Av_bulge = get_opt_sed(r.uv_bulge, r.vj_bulge, optlib)
     # Convert SED to units of erg Å^-1 cm^-2 s^-1
     # 1 * UnitfulAstro.Lsun / u"μm" / (4π * (10u"pc")^2) |> u"erg" / u"s" / u"cm^2" / u"angstrom"
-    opt_sed_disk .*= exp10(log10(r.Mdisk) - m2l_cor) * 3.1993443f-11
-    opt_sed_bulge .*= exp10(log10(r.Mbulge) - m2l_cor) * 3.1993443f-11
+    sed_disk .*= exp10(log10(r.Mdisk) - m2l_cor) * 3.1993443f-11
+    sed_bulge .*= exp10(log10(r.Mbulge) - m2l_cor) * 3.1993443f-11
 
     # Get IR SED
     ir_result = get_ir_sed(r.Tdust, irlib)
@@ -266,6 +267,7 @@ function egg(Mstar, z, SF::Bool,
         ir_result.sed .* 3.1993443f-11 # Assume in L⊙ / μm
     end
 
+    ################
     # Gas properties
     # oh_solar = r.OH - 8.69 # in units of solar metallicity
     # gdr = 2.23 - oh_solar  # gas-to-dust ratio too low here
@@ -276,10 +278,30 @@ function egg(Mstar, z, SF::Bool,
     MH2 = Mgas * 0.3 # assume 30% of gas is molecular
     MH2 = isnothing(rng) ? MH2 : rand(rng, LogNormal(log(MH2), 0.2 * logten))
 
+    #########################
     # Generate emission lines
+    # Attenuation of lines (Pannella+15 for redshift dependence)
+    Avlines_disk = (log10(r.sfr / r.sfr_uv) * 0.95 + Av_disk) / 2
+    Avlines_disk *= interp_lin(SVector(0.0, 1.0, 2.0, 100.0), SVector(1.7, 1.3, 1.0, 1.0), z)
+    Avlines_disk = isnothing(rng) ? Avlines_disk : rand(rng, Normal(Avlines_disk, 0.1))
+    Avlines_bulge = isnothing(rng) ? Av_bulge : rand(rng, Normal(Av_bulge, 0.1))
+    Avlines_disk = clamp(Avlines_disk, 0.0, 6.0)
+    Avlines_bulge = clamp(Avlines_bulge, 0.0, 6.0)
+    # Ly-α escape fraction, Hayes+10
+    fescape_disk = log10(0.445) - 0.4 * Av_disk / 4.05 * 17.8
+    # Correction to avoid over-producing Ly-α at z~1-2
+    fescape_disk += interp_lin(SVector(0.5, 1.2, 2.2, 3.0, 4.0), SVector(-1.2, -1.2, -0.8, 0.0, 0.0), z; extrapolate=true)
+    fescape_disk = isnothing(rng) ? exp10(fescape_disk) : rand(rng, LogNormal(fescape_disk * logten, 0.4 * logten))
+    fescape_disk = clamp(fescape_disk, 0.0, 1.0)
+
+    # Velocity dispersion, Stott+16
+    vdisp = exp10(0.12 * (logMstar - 10) + 1.78)
+
+
+    #####################
     # Add emission lines
     # Merge optical and IR SEDs
-    opt_λ, opt_sed = merge_add(opt_λ_bulge, opt_λ_disk, opt_sed_bulge, opt_sed_disk)
+    opt_λ, opt_sed = merge_add(λ_bulge, λ_disk, sed_bulge, sed_disk)
     λ, sed = merge_add(opt_λ, ir_λ, opt_sed, ir_sed)
     # return λ, sed
 
@@ -288,6 +310,12 @@ function egg(Mstar, z, SF::Bool,
     mag_abs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) for i in eachindex(filters)]
 
     # Apply IGM absorption, MW dust absorption
+    tau_igm = tau.(igm, λ, z) # This is working, but expensive ~ 1 ms for full SED
+    # In EGG, IGM absorption is only applied in 3 wavelength bins, I think
+    # we will do full transmission over the entire SED. For this reason EGG
+    # has to compute IGM transmission separately for the lines and for the binned SED,
+    # but we will just add the emission lines to the SED and then apply the IGM absorption once
+
     # Redshift SED, obtain observed magnitudes
     λ .*= 1 + z
     # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
