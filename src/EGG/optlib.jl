@@ -275,7 +275,7 @@ Retrieves the appropriate IR SED from the Schreiber+2017 library given the dust 
 """
 function get_ir_sed(tdust, irlib::CS17_IRLib)
     i = find_bin(tdust, irlib.tdust)
-    dust = view(irlib.dust,:,1)
-    pah = view(irlib.pah,:,1)
+    dust = view(irlib.dust,:,i)
+    pah = view(irlib.pah,:,i)
     return (lam = irlib.lam, dust = dust, pah = pah, lir_dust = irlib.lir_dust[i], lir_pah = irlib.lir_pah[i], l8_dust = irlib.l8_dust[i], l8_pah = irlib.l8_pah[i])
 end
