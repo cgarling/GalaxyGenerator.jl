@@ -1,18 +1,5 @@
 # Code for Schechter luminosity/mass functions
 
-abstract type AbstractMassFunction{T} end
-function Random.rand(rng::Random.AbstractRNG, s::AbstractMassFunction)
-    icdf = s.icdf
-    if isnothing(icdf)
-        error("Provided SchechterMassFunction has no inverse CDF buffer; please create new instance with `mmin` and `mmax` arguments.")
-    else
-        icdf(rand(rng))
-    end
-end
-function Random.rand(rng::Random.AbstractRNG, s::AbstractMassFunction, dims::Dims)
-    return reshape([rand(rng, s) for _ in 1:prod(dims)], dims)
-end
-
 """
     SchechterMassFunction(ϕ, α, Mstar0)
 The Schechter mass function model, defined as 
