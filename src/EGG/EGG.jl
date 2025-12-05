@@ -5,7 +5,7 @@ Contains code to generate galaxy catalogs using methods similar to those used in
 """
 module EGG
 
-using ..GalaxyGenerator: interp_lin, merge_add
+using ..GalaxyGenerator: interp_lin, interp_log, merge_add
 using ..GalaxyGenerator.IGM: IGMAttenuation, transmission, tau, Inoue2014IGM
 
 using ArgCheck: @argcheck, @check
@@ -27,6 +27,62 @@ include("optlib.jl")
 # Load default optical SED library
 const optlib = OptLib()
 const irlib = CS17_IRLib()
+
+"""
+    get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, mag_sys::MagnitudeSystem; 
+                   Mstar=logrange(1e6, 1e13; length=100), cosmo::AbstractCosmology=Planck18, optlib::OptLib=optlib,
+                   igm::IGMAttenuation=Inoue2014IGM())
+
+Given a redshift `z`, whether the galaxy is star-forming (`SF::Bool`), an apparent magnitude limit `mag_lim` in the filter `filt` with magnitude system `mag_sys`, returns the stellar mass limit `Mstar` (in M⊙) required to reach that magnitude limit.
+
+Below we calculate the stellar mass limit at redshift 2 for star-forming galaxies with an apparent magnitude limit of 25 in the HST/ACS F606W filter in the Vega magnitude system.
+
+```jldoctest
+julia> using GalaxyGenerator.EGG: get_mass_limit
+
+julia> using PhotometricFilters: HST_ACS_WFC_F606W, Vega
+
+julia> result = get_mass_limit(2.0, true, 25.0, HST_ACS_WFC_F606W(), Vega());
+
+julia> isapprox(result, 1.1456e12; rtol=1e-2)
+true
+```
+"""
+function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, mag_sys::MagnitudeSystem; 
+    Mstar=logrange(1e6, 1e13; length=100), cosmo::AbstractCosmology=Planck18, optlib::OptLib=optlib,
+    igm::IGMAttenuation=Inoue2014IGM())
+    # Generate Mstar - flux relation
+    m2l_cor = get_m2l_cor(z) # M/L correction in dex
+    zpt = zeropoint_mag(filt, mag_sys)
+
+    mags = Vector{Float64}(undef, length(Mstar))
+    for i in eachindex(Mstar)
+        # Get UV, VJ colors, optical SED
+        uv, vj = uv_vj(log10(Mstar[i]), z, SF; rng=nothing)
+        λ, sed, Av = get_opt_sed(uv, vj, optlib)
+        # Convert SED to units of erg Å^-1 cm^-2 s^-1, place at 10 pc for absolute mags
+        sed .*= exp10(log10(Mstar[i]) - m2l_cor) * 3.1993443f-11
+        # Add IGM attenuation; this takes most of the runtime
+        sed .*= transmission.(igm, z, λ)
+        λ .*= 1 + z # Redshift wavelengths
+        λ .*= 1f4   # convert μm to Å
+        # mags[i] = magnitude(filt, mag_sys, λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) + distmod(cosmo, z)
+        fbar = mean_flux_density(λ, sed, filt.(λ), detector_type(filt))
+        mags[i] = magnitude(fbar, zpt) + distmod(cosmo, z)
+    end
+    if mag_lim > first(mags)
+        @warn "The minimum stellar mass $(first(Mstar)) provided to `get_mass_limit` for redshift $z is too high to sample galaxies to the requested magnitude limit $mag_lim. Returning $(first(Mstar))."
+        return first(Mstar)
+    elseif mag_lim < last(mags)
+        @warn "The maximum stellar mass $(last(Mstar)) provided to `get_mass_limit` for redshift $z is too low to sample galaxies brighter than the requested magnitude limit $mag_lim. Returning $(last(Mstar))."
+        return last(Mstar)
+    else
+        # return Mstar[searchsortedfirst(mags, mag_lim; rev=true)]
+        mass_lim = interp_log(reverse(mags), reverse(Mstar), mag_lim)
+        mass_lim /= 2 # Add safety factor of 2
+        return max(first(Mstar), mass_lim) # Don't go below minimum Mstar provided
+    end
+end
 
 """
     uv_vj(logMstar, z, SF::Bool)
@@ -232,7 +288,7 @@ function egg(Mstar, z, SF::Bool,
     m2l_cor = get_m2l_cor(z) # M/L correction in dex
     λ_disk, sed_disk, Av_disk = get_opt_sed(r.uv_disk, r.vj_disk, optlib)
     λ_bulge, sed_bulge, Av_bulge = get_opt_sed(r.uv_bulge, r.vj_bulge, optlib)
-    # Convert SED to units of erg Å^-1 cm^-2 s^-1
+    # Convert SED to units of erg Å^-1 cm^-2 s^-1 and place at distance of 10 pc for absolute mags
     # 1 * UnitfulAstro.Lsun / u"μm" / (4π * (10u"pc")^2) |> u"erg" / u"s" / u"cm^2" / u"angstrom"
     sed_disk .*= exp10(log10(r.Mdisk) - m2l_cor) * 3.1993443f-11
     sed_bulge .*= exp10(log10(r.Mbulge) - m2l_cor) * 3.1993443f-11
