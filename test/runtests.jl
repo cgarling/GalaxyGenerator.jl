@@ -3,5 +3,6 @@ using Test
 using SafeTestsets: @safetestset
 
 @testset "GalaxyGenerator.jl" begin
-    @safetestset "EGG Module" include("egg_tests.jl")
+    @safetestset "doctests" include("doctests.jl")
+    @safetestset "IGM" include("igm_tests.jl")
 end
