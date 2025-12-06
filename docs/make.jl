@@ -21,6 +21,7 @@ makedocs(;
     authors = "Chris Garling",
     pages = [
         "Home" => "index.md",
+        "EGG.md",
         "IGM.md",
         "refs.md",
     ],
