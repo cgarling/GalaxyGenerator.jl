@@ -76,20 +76,6 @@ true
 """
 function integrate(model::ConstantMassFunction, mmin, mmax; npoints::Int=100)
     @argcheck mmin < mmax "mmin must be less than mmax"
-    # masses = logrange(mmin, mmax, npoints)
-    # # In-place trapezoidal integration
-    # integral = zero(first(masses))
-    # prev_mass = first(masses)
-    # prev_value = model(prev_mass)
-    # for i in eachindex(masses)[begin+1:end]
-    #     curr_mass = masses[i]
-    #     curr_value = model(curr_mass)
-    #     logdx = log10(curr_mass) - log10(prev_mass)
-    #     avg_value = (curr_value + prev_value) / 2
-    #     integral += avg_value * logdx
-    #     prev_mass, prev_value = curr_mass, curr_value
-    # end
-    # return integral
     return quadgk(x -> model(exp10(x)), log10(mmin), log10(mmax))[1]
 end
 """
@@ -98,20 +84,6 @@ For a redshift-dependent `model::RedshiftMassFunction`, numerically integrates t
 """
 function integrate(model::RedshiftMassFunction, mmin, mmax, z; npoints::Int=100)
     @argcheck mmin < mmax "mmin must be less than mmax"
-    # masses = logrange(mmin, mmax, npoints)
-    # # In-place trapezoidal integration
-    # integral = zero(first(masses))
-    # prev_mass = first(masses)
-    # prev_value = model(prev_mass, z)
-    # for i in eachindex(masses)[begin+1:end]
-    #     curr_mass = masses[i]
-    #     curr_value = model(curr_mass, z)
-    #     logdx = log10(curr_mass) - log10(prev_mass)
-    #     avg_value = (curr_value + prev_value) / 2
-    #     integral += avg_value * logdx
-    #     prev_mass, prev_value = curr_mass, curr_value
-    # end
-    # return integral
     return quadgk(x -> model(exp10(x), z), log10(mmin), log10(mmax))[1]
 end
 
@@ -175,16 +147,6 @@ end
 function integrate(model::RedshiftMassFunction, cosmo::AbstractCosmology, mmin, mmax, z1, z2; npoints::Int=100)
     @argcheck mmin < mmax "mmin must be less than mmax"
     # integrate over z: N = ∫_{z1}^{z2} φcum(z) * dV/dz * dz
-    # zs = logrange(z1, z2; length=npoints)
-    # total = 0.0
-    # for i in eachindex(zs)[begin:end-1] # Midpoint rule integration
-    #     z1 = zs[i]; z2 = zs[i+1]
-    #     zm = (z1 + z2) / 2
-    #     dz = z2 - z1
-    #     # total += φcum * dV_dz * dz
-    #     N = integrate(model, mmin, mmax, zm; npoints)
-    #     total += N * ustrip(Mpc^3, comoving_volume_element(cosmo, zm)) * dz
-    # end
     total = quadgk(z -> begin
         N = integrate(model, mmin, mmax, z; npoints)
         N * ustrip(Mpc^3, comoving_volume_element(cosmo, z))
