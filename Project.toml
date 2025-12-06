@@ -3,6 +3,9 @@ uuid = "40110415-7b45-4700-a6dd-62a19fc43a87"
 version = "0.1.0"
 authors = ["cgarling <chris.t.garling@gmail.com> and contributors"]
 
+[workspace]
+projects = ["test", "docs"]
+
 [deps]
 ArgCheck = "dce04be8-c92d-5529-be00-80e4d2c0e197"
 Compat = "34da2185-b29b-5c13-b0c7-acf172513d20"
@@ -13,6 +16,7 @@ Distributions = "31c24e10-a181-5473-b8eb-7969acd0382f"
 FITSIO = "525bcba6-941b-5504-bd06-fd0dc1a4d2eb"
 IrrationalConstants = "92d709cd-6900-40b7-9082-c6be49f344b6"
 PhotometricFilters = "482c37c2-cde1-4201-a412-83b81535d120"
+QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
@@ -24,9 +28,6 @@ UnitfulAstro = "6112ee07-acf9-5e0f-b108-d242c714bf9f"
 [sources]
 Cosmology = {url = "https://github.com/cgarling/Cosmology.jl", rev = "main"}
 
-[workspace]
-projects = ["test", "docs"]
-
 [compat]
 ArgCheck = "2"
 Compat = "4"
@@ -37,6 +38,7 @@ Documenter = "1"
 FITSIO = "0.17"
 IrrationalConstants = "0.2"
 PhotometricFilters = "1"
+QuadGK = "1, 2"
 Random = "<0.0.1, 1"
 SpecialFunctions = "2"
 StaticArrays = "1"
@@ -48,9 +50,11 @@ julia = "1.10"
 
 [extras]
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+QuadGK = "1fd47b50-473d-5c70-9696-f719f8f3bcdc"
 SafeTestsets = "1bc83da4-3b8d-516f-aca4-4fe02f6d838f"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Unitful = "1986cc42-f94f-5a68-af5c-568840ba703d"
+UnitfulAstro = "6112ee07-acf9-5e0f-b108-d242c714bf9f"
 
 [targets]
-test = ["Documenter", "Test", "SafeTestsets", "Unitful"]
+test = ["Documenter", "QuadGK", "Test", "SafeTestsets", "Unitful", "UnitfulAstro"]
