@@ -9,13 +9,8 @@ using Compat: logrange
 using Random: Random, default_rng, AbstractRNG
 using IrrationalConstants: logten
 using QuadGK: quadgk
-using Unitful: ustrip # , Quantity, @u_str
+using Unitful: ustrip
 using UnitfulAstro: Mpc
-
-# """Buffer for QuadGK integration over stellar mass."""
-# const mbuf = alloc_segbuf(size=5)
-# """Buffer for QuadGK integration over redshift."""
-# const zbuf = alloc_segbuf(size=5)
 
 export integrate, SchechterMassFunction, DoubleSchechterMassFunction
 
@@ -150,5 +145,6 @@ end
 # Include specific mass function implementations
 include("Schechter.jl")
 export SchechterMassFunction, DoubleSchechterMassFunction
+include("BinnedRedshiftMassFunction.jl")
 
 end # module
