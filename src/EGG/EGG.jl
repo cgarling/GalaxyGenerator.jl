@@ -7,6 +7,7 @@ module EGG
 
 using ..GalaxyGenerator: interp_lin, interp_log, merge_add
 using ..GalaxyGenerator.IGM: IGMAttenuation, transmission, tau, Inoue2014IGM
+using ..GalaxyGenerator.MassFunctions: BinnedRedshiftMassFunction, DoubleSchechterMassFunction, integrate
 
 using ArgCheck: @argcheck, @check
 using Cosmology: AbstractCosmology, distmod, Planck18
@@ -27,6 +28,22 @@ include("optlib.jl")
 # Load default optical SED library
 const optlib = OptLib()
 const irlib = CS17_IRLib()
+
+"""
+A `BinnedRedshiftMassFunction` implementing the stellar mass functions used in EGG [Schreiber2017](@cite), see their Table A.1. Rather than using a piecewise constant mass function between redshift bins, we interpolate linearly in redshift between the two nearest mass functions.
+"""
+const EGGMassFunction = BinnedRedshiftMassFunction(
+    # [0.3, 0.7, 1.2, 1.8, 2.5, 3.5, 4.5],
+    [(0.7 + 0.3)/2, (1.2 + 0.7)/2, (1.8 + 1.2)/2, (2.5 + 1.8)/2, (3.5 + 2.5)/2, (4.5 + 3.5)/2],
+    [
+        DoubleSchechterMassFunction(8.9e-4, -1.4, 1e11, 8.31e-5, 0.5, exp10(10.64)),
+        DoubleSchechterMassFunction(7.18e-4, -1.4, 1e11, 4.04e-4, 0.5, exp10(10.73)),
+        DoubleSchechterMassFunction(4.66e-4, -1.5, 1e11, 4.18e-4, 0.5, exp10(10.67)),
+        DoubleSchechterMassFunction(2.14e-4, -1.57, 1e11, 4.06e-4, 0.5, exp10(10.84)),
+        DoubleSchechterMassFunction(2.12e-4, -1.6, 1e11, 9.07e-5, 0.5, exp10(10.94)),
+        DoubleSchechterMassFunction(4.45e-5, -1.7, 1e11, 8.6e-6, 0.5, exp10(11.69))
+    ], true)
+
 
 """
     get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, mag_sys::MagnitudeSystem; 
