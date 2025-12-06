@@ -21,7 +21,7 @@ export integrate, SchechterMassFunction, DoubleSchechterMassFunction
 Cosmological stellar mass functions are typically defined in logarithmic units of number density per dex in stellar mass per volume (e.g., Mpc⁻³ dex⁻¹). Unless otherwise stated, all mass functions in this module follow this convention.
 
 # Required Methods
-All subtypes should implement methods like `(s::SchechterMassFunction)(Mstar)` to evaluate the mass function at a given stellar mass, and support random sampling via `rand(s::AbstractMassFunction)`. A generic implementation of `rand` is provided here that assumes the existence of an inverse CDF interpolator stored in the `icdf` field of the subtype (so `model.icdf(x)` will return the inverse CDF of the mass function at `x`)."""
+All subtypes should implement methods like `(s::SchechterMassFunction)(Mstar)` to evaluate the mass function at a given stellar mass, and support random sampling via `rand(s::AbstractMassFunction)`."""
 abstract type AbstractMassFunction{T} end
 # Generic rand implementation assumes the existence of rand(rng, s::AbstractMassFunction)
 function Random.rand(rng::Random.AbstractRNG, s::AbstractMassFunction, dims::Dims)
@@ -29,7 +29,7 @@ function Random.rand(rng::Random.AbstractRNG, s::AbstractMassFunction, dims::Dim
 end
 
 """
-`ConstantMassFunction` is an abstract type for mass functions that are constant with redshift.
+`ConstantMassFunction` is an abstract type for mass functions that are constant with redshift. A generic implementation of `rand` is defined that assumes the existence of an inverse CDF interpolator stored in the `icdf` field of the subtype (so `model.icdf(x)` will return the inverse CDF of the mass function at `x`).
 """
 abstract type ConstantMassFunction{T} <: AbstractMassFunction{T} end
 function Random.rand(rng::Random.AbstractRNG, s::ConstantMassFunction)
@@ -46,13 +46,16 @@ end
 """
 abstract type RedshiftMassFunction{T} <: AbstractMassFunction{T} end
 function Random.rand(rng::Random.AbstractRNG, s::RedshiftMassFunction)
-    icdf = s.icdf
-    if isnothing(icdf)
-        error("Provided mass function has no inverse CDF buffer; please create new instance with `mmin` and `mmax` arguments.")
-    else
-        icdf(rand(rng), rand(rng))
-    end
+    error("Generic random sampling from redshift-dependent mass functions is not currently supported.")
 end
+# function Random.rand(rng::Random.AbstractRNG, s::RedshiftMassFunction)
+#     icdf = s.icdf
+#     if isnothing(icdf)
+#         error("Provided mass function has no inverse CDF buffer; please create new instance with `mmin` and `mmax` arguments.")
+#     else
+#         icdf(rand(rng), rand(rng))
+#     end
+# end
 
 
 """
