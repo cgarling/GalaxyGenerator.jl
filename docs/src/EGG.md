@@ -12,6 +12,58 @@ GalaxyGenerator.EGG.EGGMassFunction_SF
 GalaxyGenerator.EGG.EGGMassFunction_Q
 ```
 
+These mass functions are plotted below.
+
+```@example
+using CairoMakie
+using GalaxyGenerator.EGG: EGGMassFunction_SF, EGGMassFunction_Q
+
+# Define the range of log10(Mstar) and extract redshifts
+logMstar = 8:0.1:12
+# Ranges of redshifts defined by Schreiber2017
+z_ranges = [0.3 0.7; 0.7 1.2; 1.2 1.8; 1.8 2.5; 2.5 3.5; 3.5 4.5]
+
+# Create the figure
+fig = Figure(size=(1000,800))
+
+# Left panel: Star-forming mass function
+ax1 = Axis(fig[1, 1],
+    title = "Star-Forming",
+    xlabel = L"\log_{10}(M_\star / M_\odot)",
+    ylabel = L"\log_{10}(\Phi / \mathrm{Mpc}^{-3} \ \mathrm{dex}^{-1})",
+    xscale = log10,
+    yscale = log10
+)
+for i in axes(z_ranges,1)
+    z = z_ranges[i,1]
+    Φ = [EGGMassFunction_SF(exp10(M), z) for M in logMstar]
+    lines!(ax1, exp10.(logMstar), Φ, label = L"%$(z_ranges[i,1]) < z < %$(z_ranges[i,2])")
+end
+axislegend(ax1; position=:lb)
+
+# Right panel: Quiescent mass function
+ax2 = Axis(fig[1, 2],
+    title = "Quiescent",
+    xlabel = L"\log_{10}(M_\star / M_\odot)",
+    xscale = log10,
+    yscale = log10,
+    yticklabelsvisible = false  # Remove y-axis labels
+)
+for i in axes(z_ranges,1)
+    z = z_ranges[i,1]
+    Φ = [EGGMassFunction_Q(exp10(M), z) for M in logMstar]
+    lines!(ax2, exp10.(logMstar), Φ, label = L"%$(z_ranges[i,1]) < z < %$(z_ranges[i,2])")
+end
+axislegend(ax2)
+
+# Link y-axes of both panels
+linkyaxes!(ax1, ax2)
+ylims!(ax1, 1e-5, 1e-1)
+xlims!(ax1, 1e8, 1e12)
+xlims!(ax2, 1e8, 1e12)
+
+fig
+```
 
 ## EGG References
 This page cites the following references:
