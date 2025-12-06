@@ -1,11 +1,12 @@
 """Module containing modules for cosmological stellar mass functions."""
 module MassFunctions
 
-using ..GalaxyGenerator: inverse_cdf!
+using ..GalaxyGenerator: inverse_cdf!, interp_lin, interp_log
 
 using ArgCheck: @argcheck, @check
 using Cosmology: AbstractCosmology, comoving_volume, comoving_volume_element
 using Compat: logrange
+using HCubature: hcubature
 using Random: Random, default_rng, AbstractRNG
 using IrrationalConstants: logten
 using QuadGK: quadgk
@@ -126,18 +127,21 @@ function integrate(model::ConstantMassFunction, cosmo::AbstractCosmology, mmin, 
     volume = ustrip(Mpc^3, volume) # Convert volume to Mpc³ without units
     return mass_integral * volume
 end
+
 function integrate(model::RedshiftMassFunction, cosmo::AbstractCosmology, mmin, mmax, z; kws...)
     return integrate(model, cosmo, mmin, mmax, zero(z), z; kws...)
 end
 function integrate(model::RedshiftMassFunction, cosmo::AbstractCosmology, mmin, mmax, z1, z2; kws...)
     @argcheck mmin < mmax "mmin must be less than mmax"
     # integrate over z: N = ∫_{z1}^{z2} φcum(z) * dV/dz * dz
-    total = quadgk(z -> begin
-        N = integrate(model, mmin, mmax, z; kws...)
+    integrand(x) = begin
+        logMstar, z = x
+        N = model(exp10(logMstar), z)
         N * ustrip(Mpc^3, comoving_volume_element(cosmo, z))
-    end, z1, z2; kws...)[1]
+    end
+    total = hcubature(integrand, (log10(mmin), z1), (log10(mmax), z2); kws...)[1]
     # Comoving volume element is per steradian, so multiply by 4π to get full sky
-    return total * 4 * π
+   return total * 4 * π
 end
 
 
