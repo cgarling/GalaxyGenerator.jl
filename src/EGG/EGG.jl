@@ -30,9 +30,9 @@ const optlib = OptLib()
 const irlib = CS17_IRLib()
 
 """
-A `BinnedRedshiftMassFunction` implementing the stellar mass functions used in EGG [Schreiber2017](@cite), see their Table A.1. Rather than using a piecewise constant mass function between redshift bins, we interpolate linearly in redshift between the two nearest mass functions.
+A `BinnedRedshiftMassFunction` implementing the stellar mass functions used in EGG [Schreiber2017](@cite) for *star-forming* galaxies, see their Table A.1. Rather than using a piecewise constant mass function between redshift bins, we interpolate linearly in redshift between the two nearest mass functions.
 """
-const EGGMassFunction = BinnedRedshiftMassFunction(
+const EGGMassFunction_SF = BinnedRedshiftMassFunction(
     # [0.3, 0.7, 1.2, 1.8, 2.5, 3.5, 4.5],
     [(0.7 + 0.3)/2, (1.2 + 0.7)/2, (1.8 + 1.2)/2, (2.5 + 1.8)/2, (3.5 + 2.5)/2, (4.5 + 3.5)/2],
     [
@@ -42,6 +42,21 @@ const EGGMassFunction = BinnedRedshiftMassFunction(
         DoubleSchechterMassFunction(2.14e-4, -1.57, 1e11, 4.06e-4, 0.5, exp10(10.84)),
         DoubleSchechterMassFunction(2.12e-4, -1.6, 1e11, 9.07e-5, 0.5, exp10(10.94)),
         DoubleSchechterMassFunction(4.45e-5, -1.7, 1e11, 8.6e-6, 0.5, exp10(11.69))
+    ], true)
+
+"""
+A `BinnedRedshiftMassFunction` implementing the stellar mass functions used in EGG [Schreiber2017](@cite) for *quiescent* galaxies, see their Table A.1. Rather than using a piecewise constant mass function between redshift bins, we interpolate linearly in redshift between the two nearest mass functions.
+"""
+const EGGMassFunction_Q = BinnedRedshiftMassFunction(
+    # [0.3, 0.7, 1.2, 1.8, 2.5, 3.5, 4.5],
+    [(0.7 + 0.3)/2, (1.2 + 0.7)/2, (1.8 + 1.2)/2, (2.5 + 1.8)/2, (3.5 + 2.5)/2, (4.5 + 3.5)/2],
+    [
+        DoubleSchechterMassFunction(7.77e-5, -1.65, 1e11, 1.54e-3, -0.48, exp10(11.04)),
+        DoubleSchechterMassFunction(3.54e-5, -1.6, 1e11, 1.04e-3, 0.06, exp10(10.86)),
+        DoubleSchechterMassFunction(2.3e-5, -1.25, 1e11, 6.25e-4, 0.3, exp10(10.83)),
+        DoubleSchechterMassFunction(1e-5, -1.0, 1e11, 1.73e-4, -0.17, exp10(11.05)),
+        DoubleSchechterMassFunction(0.0, -1.0, 1e11, 1.22e-4, -0.26, exp10(10.94)),
+        DoubleSchechterMassFunction(0.0, -1.0, 1e11, 3e-5, -0.3, 1e11)
     ], true)
 
 
