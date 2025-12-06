@@ -28,7 +28,7 @@ julia> rand(s2) isa Float64 # s2 supports random sampling
 true
 ```
 """
-struct SchechterMassFunction{T,S} <: AbstractMassFunction{T}
+struct SchechterMassFunction{T,S} <: ConstantMassFunction{T}
     ϕ::T
     α::T
     Mstar0::T
@@ -85,7 +85,7 @@ julia> rand(s2) isa Float64 # s2 supports random sampling
 true
 ```
 """
-struct DoubleSchechterMassFunction{T,S} <: AbstractMassFunction{T}
+struct DoubleSchechterMassFunction{T,S} <: ConstantMassFunction{T}
     S1::SchechterMassFunction{T}
     S2::SchechterMassFunction{T}
     icdf::S
