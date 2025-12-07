@@ -5,15 +5,16 @@ Contains code to generate galaxy catalogs using methods similar to those used in
 """
 module EGG
 
-using ..GalaxyGenerator: interp_lin, interp_log, merge_add, find_bin
+using ..GalaxyGenerator: interp_lin, interp_log, merge_add, find_bin, f_sky
 using ..GalaxyGenerator.IGM: IGMAttenuation, transmission, tau, Inoue2014IGM
-using ..GalaxyGenerator.MassFunctions: BinnedRedshiftMassFunction, DoubleSchechterMassFunction, integrate
+using ..GalaxyGenerator.MassFunctions: RedshiftMassFunction, RedshiftMassFunctionSampler, MassFunctionSampler, BinnedRedshiftMassFunction, DoubleSchechterMassFunction, integrate
 
 using ArgCheck: @argcheck, @check
 using Cosmology: AbstractCosmology, distmod, Planck18
-using Distributions: LogNormal, Normal, Uniform
+using Distributions: LogNormal, Normal, Uniform, Poisson
 using FITSIO: FITS
 using IrrationalConstants: logten
+import Logging
 using PhotometricFilters: AbstractFilter, magnitude, MagnitudeSystem, mean_flux_density, zeropoint_mag, detector_type, wavelength, throughput
 using Random: Random, default_rng, AbstractRNG
 using SpecialFunctions: erf
@@ -66,6 +67,22 @@ const EGGMassFunction_Q = BinnedRedshiftMassFunction(
 
 Given a redshift `z`, whether the galaxy is star-forming (`SF::Bool`), an apparent magnitude limit `mag_lim` in the filter `filt` with magnitude system `mag_sys`, returns the stellar mass limit `Mstar` (in M⊙) required to reach that magnitude limit.
 
+# Arguments
+- `z`: Redshift
+- `SF::Bool`: Whether the galaxy is star-forming (`true`) or quiescent (`false`)
+- `mag_lim`: Apparent magnitude limit in the specified filter and magnitude system
+- `filt::AbstractFilter`: Photometric filter
+- `mag_sys::MagnitudeSystem`: Magnitude system for the filter
+
+# Keyword Arguments
+- `Mstar`: Range of stellar masses (in M⊙) to sample when calculating the mass limit. The returned mass limit will be constrained to be within this range.
+- `cosmo::AbstractCosmology`: Cosmology to use for distance modulus calculations
+- `optlib::OptLib`: Optical SED library to use for generating galaxy SEDs
+- `igm::IGMAttenuation`: IGM attenuation model to use when generating galaxy SEDs
+
+# Returns
+- `mass_lim`: Stellar mass limit (in M⊙) required to reach the specified magnitude limit at redshift `z`
+
 Below we calculate the stellar mass limit at redshift 2 for star-forming galaxies with an apparent magnitude limit of 25 in the HST/ACS F606W filter in the Vega magnitude system.
 
 ```jldoctest
@@ -79,12 +96,15 @@ julia> isapprox(result, 1.1456e12; rtol=1e-2)
 true
 ```
 """
-function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, mag_sys::MagnitudeSystem; 
+function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, mag_sys::MagnitudeSystem; kws...)
+    return get_mass_limit(z, SF, mag_lim, filt, zeropoint_mag(filt, mag_sys); kws...) # Calculate zeropoint_mag and call below function
+end
+function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, zpt; 
     Mstar=logrange(1e6, 1e13; length=100), cosmo::AbstractCosmology=Planck18, optlib::OptLib=optlib,
     igm::IGMAttenuation=Inoue2014IGM())
     # Generate Mstar - flux relation
     m2l_cor = get_m2l_cor(z) # M/L correction in dex
-    zpt = zeropoint_mag(filt, mag_sys)
+    # zpt = zeropoint_mag(filt, mag_sys)
 
     mags = Vector{Float64}(undef, length(Mstar))
     for i in eachindex(Mstar)
@@ -108,8 +128,8 @@ function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, mag_sys::Mag
         @warn "The maximum stellar mass $(last(Mstar)) provided to `get_mass_limit` for redshift $z is too low to sample galaxies brighter than the requested magnitude limit $mag_lim. Returning $(last(Mstar))."
         return last(Mstar)
     else
-        # return Mstar[searchsortedfirst(mags, mag_lim; rev=true)]
-        mass_lim = interp_log(reverse(mags), reverse(Mstar), mag_lim)
+        mass_lim = Mstar[searchsortedfirst(mags, mag_lim; rev=true)]
+        # mass_lim = interp_log(reverse(mags), reverse(Mstar), mag_lim) # Assumes monotonically decreasing mags with Mstar, not true in general
         mass_lim /= 2 # Add safety factor of 2
         return max(first(Mstar), mass_lim) # Don't go below minimum Mstar provided
     end
@@ -184,7 +204,7 @@ end
 function egg(Mstar, z, SF::Bool; 
     rng::Union{Nothing,AbstractRNG}=default_rng())
 
-    Mstar, z = Float32(Mstar), Float32(z)
+    # Mstar, z = Float32(Mstar), Float32(z)
     logMstar = log10(Mstar)
     log1pz = log1p(z) / logten # same as log10(z + 1)
     # Distributions for the bulge-to-total mass ratio
@@ -197,6 +217,9 @@ function egg(Mstar, z, SF::Bool;
     BT = clamp(BT, 0.0, 1.0)
     Mbulge = Mstar * BT
     Mdisk = Mstar - Mbulge
+    if isnan(Mbulge)
+        println(Mstar, " ", BT)
+    end
     @check Mbulge >= 0
     @check Mdisk >= 0
 
@@ -294,26 +317,46 @@ function egg(Mstar, z, SF::Bool;
     fpah = clamp(1 / (1 - (331 - 691 * ir8) / (193 - 6.98 * ir8)), 0.0, 1.0)
     lir = isfinite(lir) ? lir : 0.0
 
-    return (Mstar = Mstar, sfr = sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx, OH = oh)
+    return (Mstar = Mstar, z = z, sfr = sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx, OH = oh)
 end
 
-# This method takes 
+# This function is basically and intermediary between above function and below function.
+# It computes basic properties using the function above, which returns a NamedTuple,
+# then it feeds that NamedTuple into the function below that computes magnitudes.
 function egg(Mstar, z, SF::Bool, 
     @nospecialize(filters::AbstractVector{<:AbstractFilter}),
     @nospecialize(mag_sys::AbstractVector{<:MagnitudeSystem});
+    rng::Union{Nothing,AbstractRNG}=default_rng(),
+    kws...)
+    # return egg(egg(Mstar, z, SF; rng=rng), filters, mag_sys; rng=rng, kws...)
+    zpts = zeropoint_mag.(filters, mag_sys)
+    return egg(Mstar, z, SF, filters, zpts; rng, kws...) # Call below ...
+end
+function egg(Mstar, z, SF::Bool, 
+    @nospecialize(filters::AbstractVector{<:AbstractFilter}),
+    zpts::AbstractVector;
+    rng::Union{Nothing,AbstractRNG}=default_rng(),
+    kws...)
+    # return egg(egg(Mstar, z, SF; rng=rng), filters, mag_sys; rng=rng, kws...)
+    return egg(egg(Mstar, z, SF; rng=rng), filters, zpts; rng=rng, kws...)
+end
+
+function egg(r::NamedTuple, 
+    @nospecialize(filters::AbstractVector{<:AbstractFilter}),
+    # @nospecialize(mag_sys::AbstractVector{<:MagnitudeSystem});
+    zpts::AbstractVector;
     cosmo::AbstractCosmology=Planck18,
     rng::Union{Nothing,AbstractRNG}=default_rng(), 
     optlib::OptLib=optlib,
     irlib::IRLib=irlib,
-    igm::IGMAttenuation=Inoue2014IGM())
+    igm::IGMAttenuation=Inoue2014IGM(),
+    A_λ_MW=0.0 # Milky Way extinction in magnitudes
+    )
 
-    @argcheck length(filters) == length(mag_sys)
-    Mstar, z = Float32(Mstar), Float32(z)
+    @argcheck length(filters) == length(zpts) # length(mag_sys)
+    Mstar, z = r.Mstar, r.z
     logMstar = log10(Mstar)
-    dmod = distmod(cosmo, z)
-
-    # Call above method to calculate galaxy properties
-    r = egg(Mstar, z, SF; rng = rng)
+    dmod = distmod(cosmo, z) # Cosmological distance modulus at redshift z
 
     # Get optical SEDs; SEDs returned in units of L⊙ / μm / M⊙, λ in μm
     m2l_cor = get_m2l_cor(z) # M/L correction in dex
@@ -347,9 +390,9 @@ function egg(Mstar, z, SF::Bool,
     # Calculate final ir_sed in units of erg Å^-1 cm^-2 s^-1
     ir_sed = if typeof(irlib) == CS17_IRLib
         # CS_17 library is in units of L⊙ / μm / M⊙ of dust
-        (ir_result.dust .* (1 - fpah) .+ ir_result.pah .* fpah) .* Mdust .* 3.1993443f-11
+        (ir_result.dust .* (1 - Float32(fpah)) .+ ir_result.pah .* Float32(fpah)) .* Float32(Mdust) .* 3.1993443f-11
     else
-        ir_result.sed .* 3.1993443f-11 # Assume in L⊙ / μm
+        ir_result.sed .* 3.1993443f-11 # Assume in L⊙ / μm, convert to erg Å^-1 cm^-2 s^-1 at 10 pc
     end
 
     ################
@@ -388,19 +431,24 @@ function egg(Mstar, z, SF::Bool,
     # Merge optical and IR SEDs
     opt_λ, opt_sed = merge_add(λ_bulge, λ_disk, sed_bulge, sed_disk)
     λ, sed = merge_add(opt_λ, ir_λ, opt_sed, ir_sed)
-    # return λ, sed
+    λ .*= 1f4 # convert μm to Å
 
     # Obtain rest-frame magnitudes
     # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
-    mag_abs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) for i in eachindex(filters)]
+    # mag_abs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) for i in eachindex(filters)]
+    mag_abs = Vector{Float32}(undef, length(filters))
+    for i in eachindex(filters)
+        fbar = mean_flux_density(λ, sed, Float32.(filters[i].(λ)), detector_type(filters[i]))
+        mag_abs[i] = magnitude(fbar, zpts[i])
+    end
 
     # Apply IGM absorption, MW dust absorption
     tau_igm = tau.(igm, z, λ) # This is working, but expensive ~ 1 ms for full SED
-    A_λ = 0.0 # Get MW extinction
-    tau_MW = A_λ / (2.5 * log10(ℯ)) # The constant is ~1.086
+    τ_MW = A_λ_MW / (2.5 * log10(ℯ)) # The constant is ~1.086
     τ = tau_igm # in place
-    τ .= tau_igm .+ tau_MW
-    sed .*= exp.(-τ)
+    @. τ = tau_igm + τ_MW
+    @. sed *= exp(-τ)
+
     # In EGG, IGM absorption is only applied in 3 wavelength bins, I think
     # we will do full transmission over the entire SED. For this reason EGG
     # has to compute IGM transmission separately for the lines and for the binned SED,
@@ -409,7 +457,12 @@ function egg(Mstar, z, SF::Bool,
     # Redshift SED, obtain observed magnitudes
     λ .*= 1 + z
     # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
-    mag_obs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) + dmod for i in eachindex(filters)]
+    # mag_obs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) + dmod for i in eachindex(filters)]
+    mag_obs = Vector{Float32}(undef, length(filters))
+    for i in eachindex(filters)
+        fbar = mean_flux_density(λ, sed, Float32.(filters[i].(λ)), detector_type(filters[i]))
+        mag_obs[i] = magnitude(fbar, zpts[i]) + dmod
+    end
 
     return merge(r, (Mgas = Mgas, MH2 = MH2, fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_obs = mag_obs, λ = λ, sed = sed))
     # mag_obs = [-25//10 * log10(mean_flux_density(filters[i], λ, sed)) - zeropoint_mag(filters[i], mag_sys[i]) for i in eachindex(filters)]
@@ -421,49 +474,229 @@ function egg(Mstar, z, SF::Bool,
 
 end
 
-# function EGG(Mstar, z; rng::AbstractRNG=default_rng())
-#     logMstar = log10(Mstar)
-#     log1pz = log1p(z) / logten # same as log10(z + 1)
-#     # Distributions for the bulge-to-total mass ratio
-#     bt_dist_SF = LogNormal(log(exp10(-0.7 + 0.27 * (logMstar - 10))), 0.2 * logten)
-#     bt_dist_Q = LogNormal(log(exp10(-0.3 + 0.1 * (logMstar - 10))), 0.2 * logten)
+#################################################################################
+# `generate_galaxies` here will return bulk galaxy properties but *no* photometry
 
-#     # Distributions for bulge, disk sizes
-#     Fz_disk = if z <= 1.7
-#         0.41 - 0.22 * log1pz
-#     else
-#         0.62 - 0.7 * log1pz
-#     end
-#     Fz_bulge = if z <= 0.5
-#         0.78 - 0.6 * log1pz
-#     else
-#         0.9 - 1.3 * log1pz
-#     end
-#     R50_disk = LogNormal(log(exp10(0.2 * (logMstar - 9.35) + Fz_disk)), 0.17 * logten) # kpc
-#     R50_bulge = LogNormal(log(exp10(0.2 * (logMstar - 11.25) + Fz_bulge)), 0.2 * logten) # kpc
-#     PA_dist = Uniform() # Uniform position angle, shared between bulge and disk
+# This will generate `RedshiftMassFunctionSampler`s for SF and Q galaxies from provided `sf_massfunc` and `q_massfunc` keyword arguments and call below function.
+# For small number of galaxies, runtime is dominated by constructing the samplers, not running egg
+function generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, args...;
+    cosmo::AbstractCosmology=Planck18,
+    # rng::AbstractRNG=default_rng(),
+    # use_rng::Bool=true, # We *have* to use random sampling for redshifts, stellar masses, but RNG for galaxy properties is optional
+    # poisson::Bool=true, # Whether to add Poisson scatter to number of galaxies (true) or just return expected number (false)
+    # optlib::OptLib=optlib,
+    # irlib::IRLib=irlib,
+    # igm::IGMAttenuation=Inoue2014IGM(),
+    q_massfunc::RedshiftMassFunction=EGGMassFunction_Q,
+    sf_massfunc::RedshiftMassFunction=EGGMassFunction_SF,
+    npoints_mass::Int=100, npoints_redshift::Int=100,
+    kws...)
 
-#     # Colors
-#     # For star-forming case
-#     a0 = 0.48 * erf(logMstar - 10) + 1.15
-#     a1 = -0.28 + 0.25 * max(0, logMstar - 10.35)
-#     vj_sf = a0 + a1 * min(z, 3.3) # V-J color for star-forming galaxies
-#     vj_sf = min(vj_sf, 1.7) # limit to <1.7
-#     # vj_sf = rand(Normal(vj_sf, 0.1)) # Add first error
-#     uv_sf = 0.65 * vj_sf + 0.45
-#     # vj_sf = rand(Normal(vj_sf, 0.12)) # Add extra error
-#     # uv_sf = rand(Normal(uv_sf, 0.12)) # Add extra error
-#     # For quiescent case
-#     vj_q = 0.1 * (logMstar - 11) + 1.25
-#     # vj_q = rand(Normal(vj_q, 0.1)) # Add first error
-#     vj_q = max(min(vj_q, 1.45), 1.15) # Restrict 1.15 <= V-J <= 1.45
-#     uv_q = 0.88 * vj_q + 0.75
-#     # vj_q = rand(Normal(vj_q, 0.1)) # Add extra error
-#     # uv_q = rand(Normal(uv_q, 0.1)) # Add extra error
+    @argcheck mmin < mmax "Minimum stellar mass `mmin` must be less than maximum stellar mass `mmax`."
+    @argcheck zmin < zmax "Minimum redshift `zmin` must be less than maximum redshift `zmax`."
+    sf_sampler = MassFunctionSampler(sf_massfunc, cosmo, mmin, mmax, zmin, zmax; npoints_mass, npoints_redshift)
+    q_sampler = MassFunctionSampler(q_massfunc, cosmo, mmin, mmax, zmin, zmax; npoints_mass, npoints_redshift)
 
-#     # Proceed assuming all disks are "star-forming"
-#     # bulges can be star-forming or quiescent with equal probability
-#     bulge_sf = rand((true,false))
+    # return generate_galaxies(sf_sampler, q_sampler, mmin, mmax, zmin, zmax; cosmo=cosmo, rng=rng, use_rng=use_rng, poisson=poisson, optlib=optlib, irlib=irlib, igm=igm, q_massfunc=q_massfunc, sf_massfunc=sf_massfunc)
+    # return generate_galaxies(sf_sampler, q_sampler, mmin, mmax, zmin, zmax, area_deg2; cosmo, kws...)
+    return generate_galaxies(sf_sampler, q_sampler, area_deg2, args...; cosmo, kws...)
+end
+
+function generate_galaxies(
+    sf_sampler::RedshiftMassFunctionSampler,
+    q_sampler::RedshiftMassFunctionSampler, 
+    # mmin, mmax, zmin, zmax, area_deg2;
+    area_deg2;
+    cosmo::AbstractCosmology=Planck18,
+    rng::AbstractRNG=default_rng(),
+    use_rng::Bool=true,  # We *have* to use random sampling for redshifts, stellar masses, but RNG for galaxy properties is optional
+    poisson::Bool=false, # Whether to add Poisson scatter to number of galaxies (true) or just return expected number (false)
+    optlib::OptLib=optlib,
+    irlib::IRLib=irlib,
+    igm::IGMAttenuation=Inoue2014IGM())
+
+    @argcheck 0 < area_deg2 < 4π * (180/π)^2 "Area in deg² must be between 0 and the full sky (~41253 deg²)."
+    # Retrieve mass and redshift limits from samplers
+    mmin_sf, mmax_sf = sf_sampler.mass_grid[1], sf_sampler.mass_grid[end]
+    zmin_sf, zmax_sf = sf_sampler.redshift_grid[1], sf_sampler.redshift_grid[end]
+    mmin_q, mmax_q = q_sampler.mass_grid[1], q_sampler.mass_grid[end]
+    zmin_q, zmax_q = q_sampler.redshift_grid[1], q_sampler.redshift_grid[end]
+
+    # Calculate expected number of galaxies with masses between mmin and mmax and redshifts between zmin and zmax
+    N_sf = integrate(sf_sampler, cosmo, mmin_sf, mmax_sf, zmin_sf, zmax_sf) * f_sky(area_deg2)
+    N_q = integrate(q_sampler, cosmo, mmin_q, mmax_q, zmin_q, zmax_q) * f_sky(area_deg2)
+
+    # Poisson sample, if requested
+    N_sf = poisson ? rand(rng, Poisson(N_sf)) : round(Int, N_sf)
+    N_q = poisson ? rand(rng, Poisson(N_q)) : round(Int, N_q)
+
+    # TODO: Even if N_sf and N_q are very large, break them up into chunks of some smaller number of galaxies,
+    # sample the stellar masses and redshifts, and then cull the lists using `get_mass_limit` to avoid memory issues.
+    N_sf > 1e7 && @warn "The expected number of star-forming galaxies ($N_sf) is very large; this may take a long time and use a lot of memory or crash outright."
+    N_q > 1e7 && @warn "The expected number of quiescent galaxies ($N_q) is very large; this may take a long time and use a lot of memory or crash outright."
+
+    # Sample redshifts and stellar masses
+    sf = rand(rng, sf_sampler, N_sf) # 2 x N_sf array of (Mstar, z)
+    q = rand(rng, q_sampler, N_q)    # 2 x N_q array of (Mstar, z)
+
+    rng = use_rng ? rng : nothing
+    # Get first result so we know the output return type
+    r1 = egg(sf[1, 1], sf[2, 1], true; rng=rng)
+    results = Vector{typeof(r1)}(undef, N_sf + N_q)
+    results[1] = r1
+    Threads.@threads for i in 1:N_sf
+        results[i] = egg(sf[1, i], sf[2, i], true; rng=rng)
+    end
+    Threads.@threads for i in 1:N_q
+        results[N_sf + i] = egg(q[1, i], q[2, i], false; rng=rng)
+    end
+
+    return results
+end
+
+#################################################################################
+# `generate_galaxies` here will return bulk galaxy properties *and* photometry, requiring input filters and mag_sys
+# Computes magnitude zeropoint and calls below function
+# function generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, mag_lim, mag_lim_idx::Int, filters::AbstractVector{<:AbstractFilter}, mag_sys::AbstractVector{<:MagnitudeSystem}; kws...)
+#     zpt = zeropoint_mag(filters[mag_lim_idx], mag_sys[magl_lim_idx])
+#     return generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, mag_lim, filters[mag_lim_idx], zpt; kws...)
 # end
+# function generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, mag_lim, filt::AbstractFilter, mag_sys::MagnitudeSystem; kws...)
+#     zpt = zeropoint_mag(filt, mag_sys)
+#     return generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, mag_lim, filt, zpt; kws...)
+# end
+function generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, mag_lim, mag_lim_idx::Int, filters::AbstractVector{<:AbstractFilter}, zpts::AbstractVector{<:MagnitudeSystem}; kws...)
+    zpts = zeropoint_mag.(filters, zpts)
+    return generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, mag_lim, mag_lim_idx, filters, zpts; kws...)
+end
+# Here we construct the MassFunctionSamplers using the provided mag_lim, filter, and zeropoint
+# This is actually kind of slow (~3s for npoints_mass=100, npoints_redshift=100) because of the calls to get_mass_limit,
+# ends up computing 10,000 mock SEDs to get mass limits which is not always a good use of time if only a small number of galaxies are being generated
+# function generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, mag_lim, filt::AbstractFilter, zpt;
+function generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, mag_lim, mag_lim_idx::Int, filters::AbstractVector{<:AbstractFilter}, zpts::AbstractVector;
+    cosmo::AbstractCosmology=Planck18,
+    # rng::AbstractRNG=default_rng(),
+    # use_rng::Bool=true, # We *have* to use random sampling for redshifts, stellar masses, but RNG for galaxy properties is optional
+    # poisson::Bool=true, # Whether to add Poisson scatter to number of galaxies (true) or just return expected number (false)
+    optlib::OptLib=optlib,
+    # irlib::IRLib=irlib,
+    igm::IGMAttenuation=Inoue2014IGM(),
+    q_massfunc::RedshiftMassFunction=EGGMassFunction_Q,
+    sf_massfunc::RedshiftMassFunction=EGGMassFunction_SF,
+    npoints_mass::Int=100, npoints_redshift::Int=100,
+    kws...)
+
+    # Select out filter and zeropoint for computing the stellar mass limits
+    filt = filters[mag_lim_idx]
+    zpt = zpts[mag_lim_idx]
+
+    @argcheck mmin < mmax "Minimum stellar mass `mmin` must be less than maximum stellar mass `mmax`."
+    @argcheck zmin < zmax "Minimum redshift `zmin` must be less than maximum redshift `zmax`."
+
+    redshift_grid = range(zmin, zmax, length=npoints_redshift)
+    mstar_grid = logrange(mmin, mmax, length=npoints_mass)
+    # Temporarily suppress warnings from get_mass_limit
+    mmin_sf, mmin_q = Logging.with_logger(Logging.SimpleLogger(stderr, Logging.Error)) do
+        mmin_sf = [get_mass_limit(z, true, mag_lim, filt, zpt; Mstar=mstar_grid, cosmo, optlib, igm) for z in redshift_grid]
+        mmin_q = [get_mass_limit(z, false, mag_lim, filt, zpt; Mstar=mstar_grid, cosmo, optlib, igm) for z in redshift_grid]
+        (mmin_sf, mmin_q)
+    end
+    sf_sampler = MassFunctionSampler(sf_massfunc, cosmo, mmin_sf, fill(mmax, npoints_mass), redshift_grid; npoints_mass)
+    q_sampler = MassFunctionSampler(q_massfunc, cosmo, mmin_q, fill(mmax, npoints_mass), redshift_grid; npoints_mass)
+    return generate_galaxies(sf_sampler, q_sampler, area_deg2, filters, zpts; cosmo, optlib, igm, kws...)
+end
+# If `mag_lim` isn't provided, we just construct the samplers and call below function
+# Computes magnitude zeropoint and calls below function
+function generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, filters::AbstractVector{<:AbstractFilter}, 
+                           mag_sys::AbstractVector{<:MagnitudeSystem}; kws...)
+    zpts = zeropoint_mag.(filters, mag_sys)
+    return generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, filters, zpts; kws...)
+end
+function generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, filters::AbstractVector{<:AbstractFilter}, zpts::AbstractVector;
+    cosmo::AbstractCosmology=Planck18,
+    q_massfunc::RedshiftMassFunction=EGGMassFunction_Q,
+    sf_massfunc::RedshiftMassFunction=EGGMassFunction_SF,
+    npoints_mass::Int=100, npoints_redshift::Int=100,
+    kws...)
+
+    sf_sampler = MassFunctionSampler(sf_massfunc, cosmo, mmin, mmax, zmin, zmax; npoints_mass, npoints_redshift)
+    q_sampler = MassFunctionSampler(q_massfunc, cosmo, mmin, mmax, zmin, zmax; npoints_mass, npoints_redshift)
+
+    # return sf_sampler, q_sampler
+    # return which(generate_galaxies, typeof.((sf_sampler, q_sampler, area_deg2, filters, zpts)))
+    return generate_galaxies(sf_sampler, q_sampler, area_deg2, filters, zpts; cosmo, kws...)
+end
+# Calculate zeropoint mags and call below function
+function generate_galaxies(sf_sampler::RedshiftMassFunctionSampler, q_sampler::RedshiftMassFunctionSampler, area_deg2, @nospecialize(filters::AbstractVector{<:AbstractFilter}), @nospecialize(mag_sys::AbstractVector{<:MagnitudeSystem}); kws...)
+    return generate_galaxies(sf_sampler, q_sampler, area_deg2, filters, zeropoint_mag.(filters, mag_sys); kws...)
+end
+function generate_galaxies(
+    sf_sampler::RedshiftMassFunctionSampler,
+    q_sampler::RedshiftMassFunctionSampler, 
+    area_deg2::Number, 
+    @nospecialize(filters::AbstractVector{<:AbstractFilter}),
+    zpts::AbstractVector;
+    cosmo::AbstractCosmology=Planck18,
+    rng::AbstractRNG=default_rng(),
+    use_rng::Bool=true,  # We *have* to use random sampling for redshifts, stellar masses, but RNG for galaxy properties is optional
+    poisson::Bool=false, # Whether to add Poisson scatter to number of galaxies (true) or just return expected number (false)
+    optlib::OptLib=optlib,
+    irlib::IRLib=irlib,
+    igm::IGMAttenuation=Inoue2014IGM())
+
+    @argcheck 0 < area_deg2 < 4π * (180/π)^2 "Area in deg² must be between 0 and the full sky (~41253 deg²)."
+    # Retrieve mass and redshift limits from samplers
+    mmin_sf, mmax_sf = sf_sampler.mass_grid[1], sf_sampler.mass_grid[end]
+    zmin_sf, zmax_sf = sf_sampler.redshift_grid[1], sf_sampler.redshift_grid[end]
+    mmin_q, mmax_q = q_sampler.mass_grid[1], q_sampler.mass_grid[end]
+    zmin_q, zmax_q = q_sampler.redshift_grid[1], q_sampler.redshift_grid[end]
+
+    # Calculate expected number of galaxies with masses between mmin and mmax and redshifts between zmin and zmax
+    # This will integrate using the analytic mass functions, not the samplers which may have different stellar mass limits
+    # due to a pre-imposed magnitude limit (see mag_lim above). So the right way to do this is to integrate over the 
+    # stellar masses at each redshift defined in the sampler.mass_grid...if the grid is the same for every redshift,
+    # then this doesn't matter and the below is correct. Ignoring for now.
+    N_sf = integrate(sf_sampler, cosmo, mmin_sf, mmax_sf, zmin_sf, zmax_sf) * f_sky(area_deg2)
+    N_q = integrate(q_sampler, cosmo, mmin_q, mmax_q, zmin_q, zmax_q) * f_sky(area_deg2)
+
+    # Poisson sample, if requested
+    N_sf = poisson ? rand(rng, Poisson(N_sf)) : round(Int, N_sf)
+    N_q = poisson ? rand(rng, Poisson(N_q)) : round(Int, N_q)
+
+    # TODO: Even if N_sf and N_q are very large, break them up into chunks of some smaller number of galaxies,
+    # sample the stellar masses and redshifts, and then cull the lists using `get_mass_limit` to avoid memory issues.
+    N_sf > 1e7 && @warn "The expected number of star-forming galaxies ($N_sf) is very large; this may take a long time and use a lot of memory or crash outright."
+    N_q > 1e7 && @warn "The expected number of quiescent galaxies ($N_q) is very large; this may take a long time and use a lot of memory or crash outright."
+
+    # Sample redshifts and stellar masses
+    sf = rand(rng, sf_sampler, N_sf) # 2 x N_sf array of (Mstar, z)
+    q = rand(rng, q_sampler, N_q)    # 2 x N_q array of (Mstar, z)
+
+    rng = use_rng ? rng : nothing
+    # Get first result so we know the output return type
+    # r1 = egg(sf[1, 1], sf[2, 1], true; rng=rng)
+    # results = Vector{typeof(r1)}(undef, N_sf + N_q)
+    # results[1] = r1
+    # Threads.@threads for i in 1:N_sf
+    #     results[i] = egg(sf[1, i], sf[2, i], true; rng=rng)
+    # end
+    # Threads.@threads for i in 1:N_q
+    #     results[N_sf + i] = egg(q[1, i], q[2, i], false; rng=rng)
+    # end
+    # Get first result so we know the output return type
+    r1 = egg(sf[1,1], sf[2,1], true, filters, zpts; rng)
+    results = Vector{typeof(r1)}(undef, N_sf + N_q)
+    results[1] = r1
+
+    # return egg(egg(Mstar, z, SF; rng=rng), filters, mag_sys; rng=rng, kws...)
+
+    # egg(Mstar, z, SF::Bool, 
+    #     @nospecialize(filters::AbstractVector{<:AbstractFilter}),
+    #     @nospecialize(mag_sys::AbstractVector{<:MagnitudeSystem});
+    #     rng::Union{Nothing,AbstractRNG}=default_rng(),
+    #     kws...)
+
+    return results
+end
 
 end # module
