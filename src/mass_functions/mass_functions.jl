@@ -1,7 +1,7 @@
 """Module containing modules for cosmological stellar mass functions."""
 module MassFunctions
 
-using ..GalaxyGenerator: interp_lin, interp_log
+using ..GalaxyGenerator: interp_lin, interp_log, find_bin
 
 using ArgCheck: @argcheck, @check
 using Cosmology: AbstractCosmology, comoving_volume, comoving_volume_element
@@ -41,7 +41,7 @@ Random.rand(rng::Random.AbstractRNG, s::ConstantMassFunction) = error("Random sa
 struct ConstantMassFunctionSampler{T, A <: AbstractVector{T}, B <: AbstractVector, C <: ConstantMassFunction} <: ConstantMassFunction{T}
     x::A  # CDF values
     y::B  # stellar masses corresponding to CDF values
-    mf::C # The mass function model
+    model::C # The mass function model
 end
 
 """
@@ -62,7 +62,7 @@ The default `npoints=1000` is typically sufficient.
 - `npoints`: Number of points to use for the inverse CDF calculation (default: 1000).
 
 # Returns
-A `MassFunctionSampler` struct containing the inverse CDF `x` and `y` values.
+A `ConstantMassFunctionSampler` struct containing the inverse CDF `x` and `y` values.
 
 ```jldoctest
 julia> using GalaxyGenerator: SchechterMassFunction, MassFunctionSampler
@@ -84,14 +84,14 @@ true
 function MassFunctionSampler(model::ConstantMassFunction, mmin, mmax; npoints::Int=1000)
     x = logrange(mmin, mmax, npoints)
     cdf = model.(x)
-    cumsum!(@view(cdf[2:end]), @views (cdf[2:end] .+ cdf[1:end-1]) ./ 2 .* diff(x))
+    cumsum!(@view(cdf[2:end]), @views (cdf[2:end] .+ cdf[1:end-1]) ./ 2 .* diff(log10.(x)))
     cdf[1] = 0
     cdf ./= last(cdf)
     T = typeof(first(cdf))
     return ConstantMassFunctionSampler{T, typeof(x), typeof(cdf), typeof(model)}(x, cdf, model)
 end
 
-(model::ConstantMassFunctionSampler)(Mstar) = model.mf(Mstar)
+(model::ConstantMassFunctionSampler)(Mstar) = model.model(Mstar)
 
 function Random.rand(rng::AbstractRNG, sampler::ConstantMassFunctionSampler)
     u = rand(rng)  # Uniform random number in [0, 1]
@@ -107,6 +107,116 @@ end
 abstract type RedshiftMassFunction{T} <: AbstractMassFunction{T} end
 
 # Random.rand(rng::Random.AbstractRNG, s::RedshiftMassFunction) = error("Random sampling of `RedshiftMassFunction` subtypes requires instantiating a `MassFunctionSampler` from your stellar mass model.")
+
+struct RedshiftMassFunctionSampler{T, A <: AbstractMatrix{T}, B <: AbstractVector{T}, C <: AbstractVector{T}, D <: AbstractVector{T}, E <: RedshiftMassFunction} <: RedshiftMassFunction{T}
+    cdf::A  # 2D CDF grid; stellar mass CDF at every redshift
+    mass_grid::B  # Stellar mass grid
+    redshift_grid::C  # Redshift grid
+    z_cdf::D  # Redshift CDF
+    model::E  # The mass function model
+end
+(model::RedshiftMassFunctionSampler)(Mstar, z) = model.model(Mstar, z)
+
+"""
+    MassFunctionSampler(model::RedshiftMassFunction, mmin, mmax, zmin, zmax; npoints_mass=100, npoints_redshift=100)
+
+Creates a sampler for any `RedshiftMassFunction` by calculating the inverse CDF over the range `[mmin, mmax]` for stellar mass and `[zmin, zmax]` for redshift.
+Instances implement the `Random.rand` interface for sampling from the mass function and return `(Mstar, z)`.
+
+# Arguments
+- `model`: The `RedshiftMassFunction` to sample from.
+- `mmin`, `mmax`: The range of stellar masses (in solar masses) for the inverse CDF.
+- `zmin`, `zmax`: The range of redshifts for the inverse CDF.
+- `npoints_mass`: Number of points to use for the stellar mass axis (default: 100).
+- `npoints_redshift`: Number of points to use for the redshift axis (default: 100).
+
+# Returns
+A `RedshiftMassFunctionSampler` struct containing the inverse CDF `x` and `y` values.
+
+```jldoctest mfs_redshift
+julia> using GalaxyGenerator: MassFunctionSampler
+
+julia> using GalaxyGenerator.EGG: EGGMassFunction_SF # Load EGG mass function, which is redshift-dependent
+
+julia> using Cosmology: Planck18
+
+julia> sampler = MassFunctionSampler(EGGMassFunction_SF, Planck18, 1e9, 1e12, 0.0, 1.0);
+
+julia> rand(sampler) isa NTuple{2, Float64} # Sample one value, returns (Mstar, z)
+true
+
+julia> rand(sampler, 5) isa Matrix{Float64} # Sampling multiple values returned as matrix
+true
+
+julia> dims = 5
+5
+
+julia> size(rand(sampler, dims)) # Return matrix has dimensions (2, dims...)
+(2, 5)
+
+julia> sampler(1e9, 0.5) == EGGMassFunction_SF(1e9, 0.5) # sampler is also a mass function
+true
+```
+"""
+function MassFunctionSampler(model::RedshiftMassFunction, cosmo::AbstractCosmology, mmin, mmax, zmin, zmax; npoints_mass::Int=100, npoints_redshift::Int=100, kws...)
+    mass_grid = logrange(mmin, mmax, npoints_mass)
+    redshift_grid = range(zmin, zmax, length=npoints_redshift)
+
+    # Compute differential number of galaxies in each bin of mass, redshift
+    mat = zeros(npoints_mass, npoints_redshift)
+    idxs = zmin ≈ 0 ? eachindex(mass_grid)[begin+1:end] : eachindex(mass_grid)
+    Threads.@threads for i in idxs
+        for j in eachindex(redshift_grid)[begin+1:end]
+            mat[i, j] = integrate(model, cosmo, mass_grid[i-1], mass_grid[i], redshift_grid[j-1], redshift_grid[j]; kws...)
+        end
+    end
+
+    # To sample redshift, we need to sum over the mass axis
+    z_cdf = vec(sum(mat, dims=1))
+    cumsum!(@view(z_cdf[2:end]), @views (z_cdf[2:end] .+ z_cdf[1:end-1]) ./ 2 .* diff(redshift_grid))
+    z_cdf[1] = 0
+    z_cdf ./= last(z_cdf)
+
+    # Once we sample redshift, we need to calculate CDF of every column
+    dlog_mass = diff(log10.(mass_grid)) # Integrate in log10 space (mass functions are in N / Mpc^3 / dex)
+    for col in eachcol(mat)
+        cumsum!(@view(col[2:end]), @views (col[2:end] .+ col[1:end-1]) ./ 2 .* dlog_mass)
+        col[1] = 0
+        col ./= last(col)
+    end
+    # mat[:,1] .= 0 # Fix first column; this shouldn't get used anyway
+
+    T = typeof(first(mat))
+    return RedshiftMassFunctionSampler{T, typeof(mat), typeof(mass_grid), typeof(redshift_grid), typeof(z_cdf), typeof(model)}(mat, mass_grid, redshift_grid, z_cdf, model)
+end
+
+function Random.rand(rng::AbstractRNG, sampler::RedshiftMassFunctionSampler)
+    u_mass = rand(rng)  # Uniform random number for stellar mass
+    u_redshift = rand(rng)  # Uniform random number for redshift
+
+    # First interpolate redshift
+    z = interp_lin(sampler.z_cdf, sampler.redshift_grid, u_redshift; extrapolate=false)
+
+    # Given this redshift, find which redshift bin the galaxy falls into
+    idx = max(2, find_bin(z, sampler.redshift_grid))
+    # Nearest bin value
+    # Mstar = interp_log(@view(sampler.cdf[:, idx]), sampler.mass_grid, u_mass; extrapolate=false)
+    # Linear interpolation between redshift bins
+    Mstar1 = interp_log(@view(sampler.cdf[:, idx]), sampler.mass_grid, u_mass; extrapolate=false)
+    Mstar2 = interp_log(@view(sampler.cdf[:, idx+1]), sampler.mass_grid, u_mass; extrapolate=false)
+    Mstar = Mstar1 + (Mstar2 - Mstar1) * (z - sampler.redshift_grid[idx]) / (sampler.redshift_grid[idx+1] - sampler.redshift_grid[idx])
+    return Mstar, z
+end
+
+function Random.rand(rng::AbstractRNG, sampler::RedshiftMassFunctionSampler{T}, dims::Dims) where T
+    # return reinterpret(reshape, T, [rand(rng, sampler) for _ in 1:prod(dims)])
+    # out = Array{T}(undef, 2, dims...)
+    out = zeros(T, 2, dims...)
+    for idx in CartesianIndices(axes(out)[2:end])
+        out[:, idx] .= rand(rng, sampler)
+    end
+    return out
+end
 
 
 ######################
@@ -140,7 +250,7 @@ Numerically integrates the provided stellar mass function `model` between stella
 - `z1`, `z2`: Redshift limits.
 
 # Keyword Arguments
-- `kws...`: Keyword arguments `kws...` are passed to `QuadGK.quadgk` to perform the numerical integration.
+- `kws...`: Keyword arguments `kws...` are passed to `QuadGK.quadgk` (for `model::ConstantMassFunction`) or `HCubature.hcubature` (for `model::RedshiftMassFunction`) to perform the numerical integration. These methods have default tolerances that are very tight `e.g., sqrt(eps)`, so loosening these tolerances (e.g., by setting relative tolerance `rtol=1e-4`)can significantly speed up the integration at the cost of some accuracy.
 
 # Returns
 The expectation value for the number of galaxies in the specified mass and redshift ranges.
@@ -196,6 +306,8 @@ function integrate(model::RedshiftMassFunction, cosmo::AbstractCosmology, mmin, 
         N * ustrip(Mpc^3, comoving_volume_element(cosmo, z))
     end
     total = hcubature(integrand, (log10(mmin), z1), (log10(mmax), z2); kws...)[1]
+    # total = Cubature.hcubature(integrand, (log10(mmin), z1), (log10(mmax), z2); kws...)[1] # Little slower than HCubature.hcubature
+    # total = Cubature.pcubature(integrand, (log10(mmin), z1), (log10(mmax), z2); kws...)[1] # 20x slower than hcubature
     # Comoving volume element is per steradian, so multiply by 4π to get full sky
    return total * 4 * π
 end
