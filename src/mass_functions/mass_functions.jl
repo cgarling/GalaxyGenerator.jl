@@ -64,6 +64,9 @@ The default `npoints=1000` is typically sufficient.
 # Returns
 A `ConstantMassFunctionSampler` struct containing the inverse CDF `x` and `y` values.
 
+# Notes
+As is common for numerical inverse transform sampling, the first few bins of stellar mass (where the CDF is very low) will likely be slightly undersampled (i.e., fewer samples than expected).
+
 ```jldoctest
 julia> using GalaxyGenerator: SchechterMassFunction, MassFunctionSampler
 
@@ -133,6 +136,9 @@ Instances implement the `Random.rand` interface for sampling from the mass funct
 # Returns
 A `RedshiftMassFunctionSampler` struct containing the inverse CDF `x` and `y` values.
 
+# Notes
+As is common for numerical inverse transform sampling, the first few bins of stellar mass (where the CDF is very low) will likely be slightly undersampled (i.e., fewer samples than expected).
+
 ```jldoctest mfs_redshift
 julia> using GalaxyGenerator: MassFunctionSampler
 
@@ -159,7 +165,7 @@ true
 ```
 """
 function MassFunctionSampler(model::RedshiftMassFunction, cosmo::AbstractCosmology, mmin, mmax, zmin, zmax; npoints_mass::Int=100, npoints_redshift::Int=100, kws...)
-    mass_grid = logrange(mmin, mmax, npoints_mass)
+    mass_grid = logrange(mmin, mmax, length=npoints_mass)
     redshift_grid = range(zmin, zmax, length=npoints_redshift)
 
     # Compute differential number of galaxies in each bin of mass, redshift
@@ -200,10 +206,18 @@ function Random.rand(rng::AbstractRNG, sampler::RedshiftMassFunctionSampler)
     # Given this redshift, find which redshift bin the galaxy falls into
     idx = max(2, find_bin(z, sampler.redshift_grid))
     # Nearest bin value
-    # Mstar = interp_log(@view(sampler.cdf[:, idx]), sampler.mass_grid, u_mass; extrapolate=false)
-    # Linear interpolation between redshift bins
-    Mstar1 = interp_log(@view(sampler.cdf[:, idx]), sampler.mass_grid, u_mass; extrapolate=false)
-    Mstar2 = interp_log(@view(sampler.cdf[:, idx+1]), sampler.mass_grid, u_mass; extrapolate=false)
+    # Mstar = interp_lin(@view(sampler.cdf[:, idx]), sampler.mass_grid, u_mass; extrapolate=false)
+    # Interpolation between redshift bins
+    v1, v2 = @views (sampler.cdf[:, idx], sampler.cdf[:, idx+1])
+    if u_mass > v1[2] # Whenever possible, use log interpolation for mass functions
+        Mstar1 = interp_log(v1, sampler.mass_grid, u_mass; extrapolate=false)
+        Mstar2 = interp_log(v2, sampler.mass_grid, u_mass; extrapolate=false)
+    else # For CDF, v[1] == 0 so we cant interpolate there, use linear interpolation instead
+        Mstar1 = interp_lin(v1, sampler.mass_grid, u_mass; extrapolate=false)
+        Mstar2 = interp_lin(v2, sampler.mass_grid, u_mass; extrapolate=false)
+    end
+    # Mstar1 = interp_lin(@view(sampler.cdf[:, idx]), sampler.mass_grid, u_mass; extrapolate=false)
+    # Mstar2 = interp_lin(@view(sampler.cdf[:, idx+1]), sampler.mass_grid, u_mass; extrapolate=false)
     Mstar = Mstar1 + (Mstar2 - Mstar1) * (z - sampler.redshift_grid[idx]) / (sampler.redshift_grid[idx+1] - sampler.redshift_grid[idx])
     return Mstar, z
 end
