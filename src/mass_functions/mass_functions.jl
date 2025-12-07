@@ -109,36 +109,36 @@ end
 """
 abstract type RedshiftMassFunction{T} <: AbstractMassFunction{T} end
 
-# Random.rand(rng::Random.AbstractRNG, s::RedshiftMassFunction) = error("Random sampling of `RedshiftMassFunction` subtypes requires instantiating a `MassFunctionSampler` from your stellar mass model.")
-
-struct RedshiftMassFunctionSampler{T, A <: AbstractMatrix{T}, B <: AbstractVector{T}, C <: AbstractVector{T}, D <: AbstractVector{T}, E <: RedshiftMassFunction} <: RedshiftMassFunction{T}
+struct RedshiftMassFunctionSampler{T, A <: AbstractMatrix{T}, B <: AbstractVector{T}, C <: AbstractVector{T}, D <: RedshiftMassFunction} <: RedshiftMassFunction{T}
     cdf::A  # 2D CDF grid; stellar mass CDF at every redshift
-    mass_grid::B  # Stellar mass grid
-    redshift_grid::C  # Redshift grid
-    z_cdf::D  # Redshift CDF
-    model::E  # The mass function model
+    mass_grid::A  # Stellar mass grid at every redshift
+    redshift_grid::B  # Redshift grid
+    z_cdf::C  # Redshift CDF
+    model::D  # The mass function model
 end
 (model::RedshiftMassFunctionSampler)(Mstar, z) = model.model(Mstar, z)
 
 """
-    MassFunctionSampler(model::RedshiftMassFunction, mmin, mmax, zmin, zmax; npoints_mass=100, npoints_redshift=100)
+    MassFunctionSampler(model::RedshiftMassFunction, cosmo::AbstractCosmology, mmin, mmax, zmin, zmax; npoints_mass=100, npoints_redshift=100)
 
 Creates a sampler for any `RedshiftMassFunction` by calculating the inverse CDF over the range `[mmin, mmax]` for stellar mass and `[zmin, zmax]` for redshift.
 Instances implement the `Random.rand` interface for sampling from the mass function and return `(Mstar, z)`.
 
 # Arguments
 - `model`: The `RedshiftMassFunction` to sample from.
+- `cosmo`: The cosmology model to use.
 - `mmin`, `mmax`: The range of stellar masses (in solar masses) for the inverse CDF.
 - `zmin`, `zmax`: The range of redshifts for the inverse CDF.
 - `npoints_mass`: Number of points to use for the stellar mass axis (default: 100).
 - `npoints_redshift`: Number of points to use for the redshift axis (default: 100).
 
 # Returns
-A `RedshiftMassFunctionSampler` struct containing the inverse CDF `x` and `y` values.
+A `RedshiftMassFunctionSampler` instance containing the inverse CDF `x` and `y` values.
 
 # Notes
 As is common for numerical inverse transform sampling, the first few bins of stellar mass (where the CDF is very low) will likely be slightly undersampled (i.e., fewer samples than expected).
 
+# Examples
 ```jldoctest mfs_redshift
 julia> using GalaxyGenerator: MassFunctionSampler
 
@@ -165,35 +165,106 @@ true
 ```
 """
 function MassFunctionSampler(model::RedshiftMassFunction, cosmo::AbstractCosmology, mmin, mmax, zmin, zmax; npoints_mass::Int=100, npoints_redshift::Int=100, kws...)
-    mass_grid = logrange(mmin, mmax, length=npoints_mass)
     redshift_grid = range(zmin, zmax, length=npoints_redshift)
+    return MassFunctionSampler(model, cosmo, fill(mmin, npoints_redshift), fill(mmax, npoints_redshift), redshift_grid; npoints_mass, kws...)
+end
 
-    # Compute differential number of galaxies in each bin of mass, redshift
-    mat = zeros(npoints_mass, npoints_redshift)
-    idxs = zmin ≈ 0 ? eachindex(mass_grid)[begin+1:end] : eachindex(mass_grid)
-    Threads.@threads for i in idxs
-        for j in eachindex(redshift_grid)[begin+1:end]
-            mat[i, j] = integrate(model, cosmo, mass_grid[i-1], mass_grid[i], redshift_grid[j-1], redshift_grid[j]; kws...)
-        end
+"""
+    MassFunctionSampler(model::RedshiftMassFunction, 
+                        cosmo::AbstractCosmology, 
+                        mmin::AbstractVector, 
+                        mmax::AbstractVector, 
+                        redshift_grid::AbstractVector; 
+                        npoints_mass::Int=100, kws...)
+
+Creates a sampler for any `RedshiftMassFunction` by calculating the inverse CDF over the range of stellar masses defined by `mmin` and `mmax` vectors at each redshift in `redshift_grid`;
+i.e., the minimum and maximum stellar masses at `z = redshift_grid[i]` are `mmin[i]` and `mmax[i]` respectively. This variable stellar mass range as a function of redshift
+is useful for implementing mass completeness limits that vary with redshift.
+
+# Arguments
+- `model`: The `RedshiftMassFunction` to sample from.
+- `cosmo`: The cosmology model to use.
+- `mmin`: The minimum stellar mass (in solar masses) at each redshift.
+- `mmax`: The maximum stellar mass (in solar masses) at each redshift.
+- `redshift_grid`: The redshift values to sample from.
+- `npoints_mass`: The number of points to use for the stellar mass axis (default: 100).
+- `kws`: Additional keyword arguments to pass to the mass function.
+
+# Returns
+A `RedshiftMassFunctionSampler` instance containing the inverse CDF `x` and `y` values.
+
+# Examples
+Assuming a constant mass-to-light ratio, the mass completeness limit of a flux-limited survey varies with redshift. Here we create a mass function sampler that accounts for this varying mass completeness limit.
+We assume a the survey is complete to `Mstar = 1e9` at redshift `z=0.1` and that the mass completeness limit increases with redshift proportional to the luminosity distance with constant mass-to-light ratio.
+```jldoctest mfs_redshift
+julia> using GalaxyGenerator: MassFunctionSampler
+
+julia> using GalaxyGenerator.EGG: EGGMassFunction_SF # Load EGG mass function, which is redshift-dependent
+
+julia> using Cosmology: Planck18, luminosity_dist
+
+julia> z = 0.1:0.01:3.0
+0.1:0.01:3.0
+
+julia> mmin = exp10(9) .* (luminosity_dist.(Planck18, z) ./ luminosity_dist(Planck18, 0.1)); # Example mass completeness limit increasing with redshift
+
+julia> mmax = fill(1e13, length(z)); # Fixed maximum mass for sampling
+
+julia> sampler = MassFunctionSampler(EGGMassFunction_SF, Planck18, mmin, mmax, z);
+
+julia> rand(sampler) isa NTuple{2, Float64} # Sample one value, returns (Mstar, z)
+true
+
+julia> rand(sampler, 5) isa Matrix{Float64} # Sampling multiple values returned as matrix
+true
+```
+"""
+function MassFunctionSampler(model::RedshiftMassFunction, cosmo::AbstractCosmology, mmin::AbstractVector, mmax::AbstractVector, redshift_grid::AbstractVector; npoints_mass::Int=100, kws...)
+    @argcheck issorted(redshift_grid) "`redshift_grid` must be sorted in ascending order."
+    @argcheck length(mmin) == length(mmax) == length(redshift_grid) "`mmin` must have the same length as `mmax` and `redshift_grid`."
+    for i in eachindex(mmin)
+        @check mmin[i] < mmax[i] "`mmin` must be less than `mmax` at all redshifts, found mmin=$(mmin[i]) >= mmax=$(mmax[i]) at index $i."
     end
 
+    npoints_redshift = length(redshift_grid)
+    mass_grid = zeros(npoints_mass, npoints_redshift)
+    # Fill mass grid range of masses at each redshift
+    for i in axes(mass_grid, 2)
+        mass_grid[:, i] .= logrange(mmin[i], mmax[i], length=npoints_mass)
+    end
+
+    # Compute differential number of galaxies in each bin of mass, redshift
+    cdf = similar(mass_grid)
+    # idxs = redshift_grid[1] ≈ 0 ? axes(mass_grid, 1)[begin+1:end] : axes(mass_grid, 1)
+    idxs = axes(mass_grid, 1)[begin+1:end]
+    Threads.@threads for i in idxs
+    # for i in idxs
+        for j in eachindex(redshift_grid)[begin+1:end]
+            # cdf[i, j] = integrate(model, cosmo, mass_grid[i-1], mass_grid[i], redshift_grid[j-1], redshift_grid[j]; kws...)
+            cdf[i, j] = integrate(model, cosmo, mass_grid[i-1,j], mass_grid[i,j], redshift_grid[j-1], redshift_grid[j]; kws...)
+        end
+    end
+    cdf[:,1] .= 0 # Fix first column, row
+    cdf[1,:] .= 0
+
     # To sample redshift, we need to sum over the mass axis
-    z_cdf = vec(sum(mat, dims=1))
+    z_cdf = vec(sum(cdf, dims=1))
     cumsum!(@view(z_cdf[2:end]), @views (z_cdf[2:end] .+ z_cdf[1:end-1]) ./ 2 .* diff(redshift_grid))
     z_cdf[1] = 0
     z_cdf ./= last(z_cdf)
 
     # Once we sample redshift, we need to calculate CDF of every column
-    dlog_mass = diff(log10.(mass_grid)) # Integrate in log10 space (mass functions are in N / Mpc^3 / dex)
-    for col in eachcol(mat)
+    for i in axes(cdf, 2)
+        col = @view cdf[:, i]
+        dlog_mass = diff(log10.(view(mass_grid, :, i))) # Integrate in log10 space (mass functions are in N / Mpc^3 / dex)
         cumsum!(@view(col[2:end]), @views (col[2:end] .+ col[1:end-1]) ./ 2 .* dlog_mass)
         col[1] = 0
         col ./= last(col)
     end
-    # mat[:,1] .= 0 # Fix first column; this shouldn't get used anyway
 
-    T = typeof(first(mat))
-    return RedshiftMassFunctionSampler{T, typeof(mat), typeof(mass_grid), typeof(redshift_grid), typeof(z_cdf), typeof(model)}(mat, mass_grid, redshift_grid, z_cdf, model)
+    T = typeof(first(cdf))
+    redshift_grid = convert(Vector{T}, redshift_grid)
+    return RedshiftMassFunctionSampler{T, typeof(cdf), typeof(redshift_grid), typeof(z_cdf), typeof(model)}(cdf, mass_grid, redshift_grid, z_cdf, model)
 end
 
 function Random.rand(rng::AbstractRNG, sampler::RedshiftMassFunctionSampler)
@@ -204,28 +275,22 @@ function Random.rand(rng::AbstractRNG, sampler::RedshiftMassFunctionSampler)
     z = interp_lin(sampler.z_cdf, sampler.redshift_grid, u_redshift; extrapolate=false)
 
     # Given this redshift, find which redshift bin the galaxy falls into
-    idx = max(2, find_bin(z, sampler.redshift_grid))
-    # Nearest bin value
-    # Mstar = interp_lin(@view(sampler.cdf[:, idx]), sampler.mass_grid, u_mass; extrapolate=false)
+    zidx = max(2, find_bin(z, sampler.redshift_grid))
+
     # Interpolation between redshift bins
-    v1, v2 = @views (sampler.cdf[:, idx], sampler.cdf[:, idx+1])
-    if u_mass > v1[2] # Whenever possible, use log interpolation for mass functions
-        Mstar1 = interp_log(v1, sampler.mass_grid, u_mass; extrapolate=false)
-        Mstar2 = interp_log(v2, sampler.mass_grid, u_mass; extrapolate=false)
-    else # For CDF, v[1] == 0 so we cant interpolate there, use linear interpolation instead
-        Mstar1 = interp_lin(v1, sampler.mass_grid, u_mass; extrapolate=false)
-        Mstar2 = interp_lin(v2, sampler.mass_grid, u_mass; extrapolate=false)
-    end
-    # Mstar1 = interp_lin(@view(sampler.cdf[:, idx]), sampler.mass_grid, u_mass; extrapolate=false)
-    # Mstar2 = interp_lin(@view(sampler.cdf[:, idx+1]), sampler.mass_grid, u_mass; extrapolate=false)
-    Mstar = Mstar1 + (Mstar2 - Mstar1) * (z - sampler.redshift_grid[idx]) / (sampler.redshift_grid[idx+1] - sampler.redshift_grid[idx])
+    v1, v2 = @views (sampler.cdf[:, zidx], sampler.cdf[:, zidx+1])
+    m1, m2 = @views (sampler.mass_grid[:, zidx], sampler.mass_grid[:, zidx+1])
+    # Whenever possible, use log interpolation for mass functions
+    Mstar1 = u_mass > v1[2] ? interp_log(v1, m1, u_mass; extrapolate=false) : interp_lin(v1, m1, u_mass; extrapolate=false)
+    Mstar2 = u_mass > v2[2] ? interp_log(v2, m2, u_mass; extrapolate=false) : interp_lin(v2, m2, u_mass; extrapolate=false)
+    Mstar = Mstar1 + (Mstar2 - Mstar1) * (z - sampler.redshift_grid[zidx]) / (sampler.redshift_grid[zidx+1] - sampler.redshift_grid[zidx])
     return Mstar, z
 end
 
 function Random.rand(rng::AbstractRNG, sampler::RedshiftMassFunctionSampler{T}, dims::Dims) where T
     # return reinterpret(reshape, T, [rand(rng, sampler) for _ in 1:prod(dims)])
-    # out = Array{T}(undef, 2, dims...)
-    out = zeros(T, 2, dims...)
+    out = Array{T}(undef, 2, dims...)
+    # out = zeros(T, 2, dims...)
     for idx in CartesianIndices(axes(out)[2:end])
         out[:, idx] .= rand(rng, sampler)
     end
