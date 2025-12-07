@@ -6,29 +6,32 @@
 # μ = 5 \\times \\log_{10}(d) - 5
 # ```
 # """
-# distance_modulus(distance) = 5 * log10(distance) - 5 
+# distance_modulus(distance) = 5 * log10(distance) - 5
 
 """
-    inverse_cdf!(y, x)
-Given `x` and `y` arrays that fulfill `f(x) = y`, compute and return an interpolator for the inverse CDF of the function `f(x)`. `y` is mutated in-place to contain the CDF.
+    steradian(area_deg2) = area_deg2 * (π / 180)^2
+Converts an area in square degrees to steradians.
 """
-function inverse_cdf!(y, x)
-    @argcheck length(x) == length(y)
-    Base.require_one_based_indexing(y, x)
-    cdf = y # in place
-    cumsum!(@view(cdf[2:end]), @views (cdf[2:end] .+ cdf[1:end-1]) ./ 2 .* diff(x))
-    cdf[1] = 0
-    cdf ./= last(cdf)
-    return AkimaInterpolation(x, cdf)
-end
-# function inverse_cdf(pdf, bins)
-#     @argcheck
-#     pdf = s.(bins) # Evaluate at bins
-#     cdf = pdf # in place
-#     cumsum!(@view(cdf[2:end]), @views (cdf[2:end] .+ cdf[begin:end-1]) ./ 2 .* diff(bins))
+steradians(area_deg2) = area_deg2 * π * π / 180^2 # (π / 180)^2
+"""
+    f_sky(area_deg2) = steradians(area_deg2) / 4π
+Fraction of the full sky covered by an area in square degrees.
+"""
+f_sky(area_deg2) = steradians(area_deg2) / 4 / π # 4π steradians in full sky
+
+# """
+#     inverse_cdf!(y, x)
+# Given `x` and `y` arrays that fulfill `f(x) = y`, compute and return an interpolator for the inverse CDF of the function `f(x)`. `y` is mutated in-place to contain the CDF.
+# """
+# function inverse_cdf!(y, x)
+#     @argcheck length(x) == length(y)
+#     Base.require_one_based_indexing(y, x)
+#     cdf = y # in place
+#     cumsum!(@view(cdf[2:end]), @views (cdf[2:end] .+ cdf[1:end-1]) ./ 2 .* diff(x))
 #     cdf[1] = 0
 #     cdf ./= last(cdf)
-#     return AkimaInterpolation(bins, cdf)
+#     # return AkimaInterpolation(x, cdf)
+#     return linear_interpolation(x, cdf, extrapolation_bc=Throw())
 # end
 
 """
@@ -193,3 +196,33 @@ function merge_add(x1::AbstractVector{T1}, x2::AbstractVector{T2},
 
     return xout, yout
 end
+
+# """
+#     magnitude_fast(f::AbstractFilter, T::MagnitudeSystem, wavelengths, flux)
+# A fast version of `PhotometricFilters.magnitude` that assumes `wavelengths` and `flux` are already in the correct units () and that the `flux` vector is sampled at the same wavelengths as `wavelengths(filter)`. *No checks are performed to verify this* so use with caution.
+# """
+# function magnitude_fast(f::PF.AbstractFilter, T::PF.MagnitudeSystem, wavelengths, flux)
+#     # fbar = PF.mean_flux_density(wavelengths, flux, PF.throughput(f), PF.detector_type(f))
+#     # return -25//10 * log10(fbar) - PF.zeropoint_mag(f, T)
+#     return PF.zeropoint_mag(f, T)
+# end
+# # function magnitude_fast(throughput, dtype::PF.DetectorType, mag_sys::PF.MagnitudeSystem, wavelengths, flux)
+# #     fbar = PF.mean_flux_density(wavelengths, flux, throughput, dtype)
+# #     return -25//10 * log10(fbar) - PF.zeropoint_mag(f, T)
+# # end
+
+# using PhotometricFilters; filters=[get_filter("HST/ACS_WFC.F606W", :Vega)]; mag_sys=[Vega()];
+# import Unitful as u
+# using GalaxyGenerator
+# t1 = GalaxyGenerator.EGG.egg(1e10,0.01,true,filters,mag_sys;rng=nothing)
+# λ = t1.λ * u.μm
+# sed = t1.sed * u.erg / u.s / u.cm^2 / u.angstrom
+# @benchmark magnitude($filters[1], $mag_sys[1], $λ, $sed) # 80 μs
+# λ2 = λ .|> u.angstrom # u.ustrip.(u.angstrom, λ)
+# sed2 = u.ustrip.(sed)
+# f2 = PhotometricFilter(λ2, Float32.(filters[1].(λ2)); detector=detector_type(filters[1]))
+# @assert wavelength(f2) == λ2
+# # Not exactly equal
+# # @assert GalaxyGenerator.magnitude_fast(f2, mag_sys[1], u.ustrip.(λ2), sed2) == magnitude(filters[1], mag_sys[1], λ, sed)
+# @benchmark GalaxyGenerator.magnitude_fast($f2, $mag_sys[1], $(u.ustrip.(λ2)), $sed2) # 8 μs
+# # running zeropoint_mag(f2, mag_sys[1]) is slower because it integrates the vega spectrum over a wider wavelength range than that in filters[1] ...

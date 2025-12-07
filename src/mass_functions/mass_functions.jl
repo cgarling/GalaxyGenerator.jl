@@ -1,7 +1,7 @@
 """Module containing modules for cosmological stellar mass functions."""
 module MassFunctions
 
-using ..GalaxyGenerator: inverse_cdf!, interp_lin, interp_log
+using ..GalaxyGenerator: interp_lin, interp_log
 
 using ArgCheck: @argcheck, @check
 using Cosmology: AbstractCosmology, comoving_volume, comoving_volume_element
@@ -36,14 +36,7 @@ end
 """
 abstract type ConstantMassFunction{T} <: AbstractMassFunction{T} end
 
-function Random.rand(rng::Random.AbstractRNG, s::ConstantMassFunction)
-    icdf = s.icdf
-    if isnothing(icdf)
-        error("Provided mass function has no inverse CDF buffer; please create new instance with `mmin` and `mmax` arguments.")
-    else
-        icdf(rand(rng))
-    end
-end
+Random.rand(rng::Random.AbstractRNG, s::ConstantMassFunction) = error("Random sampling of `ConstantMassFunction` subtypes requires instantiating a `MassFunctionSampler` from your stellar mass model.")
 
 struct ConstantMassFunctionSampler{T, A <: AbstractVector{T}, B <: AbstractVector, C <: ConstantMassFunction} <: ConstantMassFunction{T}
     x::A  # CDF values
@@ -55,9 +48,13 @@ end
     MassFunctionSampler(model::ConstantMassFunction, mmin, mmax; npoints=1000) <: ConstantMassFunction
 
 Creates a sampler for any `ConstantMassFunction` via inverse CDF sampling. 
-The inverse CDF is computed numerically using `npoints` points between `mmin` and `mmax`.
-*Sampled masses are restricted to between `mmin` and `mmax`.* 
 Implements the `Random.rand` interface for sampling from the mass function.
+For speed a look-up table of the inverse CDF is used for sampling; coverage 
+of this look-up table is defined by the keyword arguments `mmin` and `mmax` 
+which give the limits of the look-up table in solar masses. The number of 
+elements in this look-up table is `npoints`; more points gives greater 
+sampling accuracy at the cost of increased memory and decreased sampling speed. 
+The default `npoints=1000` is typically sufficient.
 
 # Arguments
 - `model`: The `ConstantMassFunction` to sample from.
@@ -103,23 +100,17 @@ end
 
 ###################################
 # Redshift-dependent mass functions
+
 """
 `RedshiftMassFunction` is an abstract type for mass functions that have dependence on both stellar mass and redshift. Instances should be callable as `model(Mstar, z)` and return the value of the mass function at stellar mass `Mstar` and redshift `z`.
 """
 abstract type RedshiftMassFunction{T} <: AbstractMassFunction{T} end
-function Random.rand(rng::Random.AbstractRNG, s::RedshiftMassFunction)
-    error("Generic random sampling from redshift-dependent mass functions is not currently supported.")
-end
-# function Random.rand(rng::Random.AbstractRNG, s::RedshiftMassFunction)
-#     icdf = s.icdf
-#     if isnothing(icdf)
-#         error("Provided mass function has no inverse CDF buffer; please create new instance with `mmin` and `mmax` arguments.")
-#     else
-#         icdf(rand(rng), rand(rng))
-#     end
-# end
+
+# Random.rand(rng::Random.AbstractRNG, s::RedshiftMassFunction) = error("Random sampling of `RedshiftMassFunction` subtypes requires instantiating a `MassFunctionSampler` from your stellar mass model.")
 
 
+######################
+# Integration routines
 """
     integrate(model::ConstantMassFunction, mmin, mmax; kws...)
 Numerically integrates the provided stellar mass function `model` between stellar masses `mmin` and `mmax`. Assumes the mass function is defined in logarithmic units (number density per dex in stellar mass per volume). Returns the number density per volume of galaxies with stellar masses in this range. Keyword arguments `kws...` are passed to `QuadGK.quadgk` to perform the numerical integration.

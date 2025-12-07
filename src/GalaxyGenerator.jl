@@ -1,7 +1,6 @@
 module GalaxyGenerator
 
 using ArgCheck: @argcheck, @check
-using DataInterpolations: AkimaInterpolation
 
 export SchechterMassFunction, DoubleSchechterMassFunction
 

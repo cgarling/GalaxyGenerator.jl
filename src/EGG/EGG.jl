@@ -11,7 +11,6 @@ using ..GalaxyGenerator.MassFunctions: BinnedRedshiftMassFunction, DoubleSchecht
 
 using ArgCheck: @argcheck, @check
 using Cosmology: AbstractCosmology, distmod, Planck18
-using DataInterpolations: LinearInterpolation
 using Distributions: LogNormal, Normal, Uniform
 using FITSIO: FITS
 using IrrationalConstants: logten
