@@ -15,7 +15,15 @@ Converts an area in square degrees to steradians.
 steradians(area_deg2) = area_deg2 * π * π / 180^2 # (π / 180)^2
 """
     f_sky(area_deg2) = steradians(area_deg2) / 4π
-Fraction of the full sky covered by an area in square degrees.
+Fraction of the full sky covered by an area in square degrees. 
+HST/ACS field of view is (202 arcsec)² ≈ 0.003148 deg², which is
+
+```jldoctest
+julia> using GalaxyGenerator: f_sky
+
+julia> isapprox(f_sky(202^2 / 3600^2), 7.632e-8, rtol=1e-5)
+true
+```
 """
 f_sky(area_deg2) = steradians(area_deg2) / 4 / π # 4π steradians in full sky
 
