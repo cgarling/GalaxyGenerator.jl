@@ -13,7 +13,7 @@ using QuadGK: quadgk
 using Unitful: ustrip
 using UnitfulAstro: Mpc
 
-export integrate, SchechterMassFunction, DoubleSchechterMassFunction
+export integrate, SchechterMassFunction, DoubleSchechterMassFunction, MassFunctionSampler
 
 """Abstract type for cosmological stellar mass functions (e.g., [`SchechterMassFunction`](@ref)).
 
@@ -23,15 +23,19 @@ Cosmological stellar mass functions are typically defined in logarithmic units o
 # Required Methods
 All subtypes should implement methods like `(s::SchechterMassFunction)(Mstar)` to evaluate the mass function at a given stellar mass, and support random sampling via `rand(s::AbstractMassFunction)`."""
 abstract type AbstractMassFunction{T} end
+
 # Generic rand implementation assumes the existence of rand(rng, s::AbstractMassFunction)
 function Random.rand(rng::Random.AbstractRNG, s::AbstractMassFunction, dims::Dims)
     return reshape([rand(rng, s) for _ in 1:prod(dims)], dims)
 end
 
+###################################
+# Redshift-constant mass functions
 """
 `ConstantMassFunction` is an abstract type for mass functions that are constant with redshift. A generic implementation of `rand` is defined that assumes the existence of an inverse CDF interpolator stored in the `icdf` field of the subtype (so `model.icdf(x)` will return the inverse CDF of the mass function at `x`).
 """
 abstract type ConstantMassFunction{T} <: AbstractMassFunction{T} end
+
 function Random.rand(rng::Random.AbstractRNG, s::ConstantMassFunction)
     icdf = s.icdf
     if isnothing(icdf)
@@ -41,6 +45,64 @@ function Random.rand(rng::Random.AbstractRNG, s::ConstantMassFunction)
     end
 end
 
+struct ConstantMassFunctionSampler{T, A <: AbstractVector{T}, B <: AbstractVector, C <: ConstantMassFunction} <: ConstantMassFunction{T}
+    x::A  # CDF values
+    y::B  # stellar masses corresponding to CDF values
+    mf::C # The mass function model
+end
+
+"""
+    MassFunctionSampler(model::ConstantMassFunction, mmin, mmax; npoints=1000) <: ConstantMassFunction
+
+Creates a sampler for any `ConstantMassFunction` via inverse CDF sampling. 
+The inverse CDF is computed numerically using `npoints` points between `mmin` and `mmax`.
+*Sampled masses are restricted to between `mmin` and `mmax`.* 
+Implements the `Random.rand` interface for sampling from the mass function.
+
+# Arguments
+- `model`: The `ConstantMassFunction` to sample from.
+- `mmin`, `mmax`: The range of stellar masses (in solar masses) for the inverse CDF.
+- `npoints`: Number of points to use for the inverse CDF calculation (default: 1000).
+
+# Returns
+A `MassFunctionSampler` struct containing the inverse CDF `x` and `y` values.
+
+```jldoctest
+julia> using GalaxyGenerator: SchechterMassFunction, MassFunctionSampler
+
+julia> s = SchechterMassFunction(0.003, -1.3, 1e11);
+
+julia> sampler = MassFunctionSampler(s, 1e9, 1e12);
+
+julia> rand(sampler) isa Float64 # Sample one value
+true
+
+julia> rand(sampler, 5) isa Vector{Float64} # Sampling multiple values
+true
+
+julia> s(1e9) == sampler(1e9) # sampler is also a mass function
+true
+```
+"""
+function MassFunctionSampler(model::ConstantMassFunction, mmin, mmax; npoints::Int=1000)
+    x = logrange(mmin, mmax, npoints)
+    cdf = model.(x)
+    cumsum!(@view(cdf[2:end]), @views (cdf[2:end] .+ cdf[1:end-1]) ./ 2 .* diff(x))
+    cdf[1] = 0
+    cdf ./= last(cdf)
+    T = typeof(first(cdf))
+    return ConstantMassFunctionSampler{T, typeof(x), typeof(cdf), typeof(model)}(x, cdf, model)
+end
+
+(model::ConstantMassFunctionSampler)(Mstar) = model.mf(Mstar)
+
+function Random.rand(rng::AbstractRNG, sampler::ConstantMassFunctionSampler)
+    u = rand(rng)  # Uniform random number in [0, 1]
+    return interp_lin(sampler.y, sampler.x, u; extrapolate=false)
+end
+
+###################################
+# Redshift-dependent mass functions
 """
 `RedshiftMassFunction` is an abstract type for mass functions that have dependence on both stellar mass and redshift. Instances should be callable as `model(Mstar, z)` and return the value of the mass function at stellar mass `Mstar` and redshift `z`.
 """
