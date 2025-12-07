@@ -116,48 +116,6 @@ function build_idxmap(USE::BitMatrix)
     return idxmap, used
 end
 
-# `edges` is length nbins + 1 vector of bin edges.
-# Returns bin index into histogram for which `value` falls into.
-"""
-    find_bin(value::Real, edges::AbstractVector{<:Real}
-`edges` is length `nbins + 1` vector of histogram bin edges. Returns the bin index for a histogram which `value` falls into.
-
-```jldoctest
-julia> using GalaxyGenerator.EGG: find_bin
-
-julia> x = 0.1:0.1:1.0;
-
-julia> find_bin(-0.1, x) == 1
-true
-
-julia> find_bin(0.2, x) == 1
-true
-
-julia> find_bin(0.25, x) == 2
-true
-
-julia> find_bin(10.0, x) == 9
-true
-
-julia> find_bin(11.0, x) == 9
-true
-```
-"""
-function find_bin(value::Real, edges::AbstractVector{<:Real})
-    Base.require_one_based_indexing(edges)
-    n = length(edges)
-    n < 2 && return 1 # Degenerate case
-    # Binary search: finds first index j where edges[j] ≥ value
-    j = searchsortedfirst(edges, value)
-    if j == 1 # value < edges[1]  OR  value == edges[1]
-        return 1
-    elseif j > n # value ≥ edges[end]
-        return n - 1
-    else # edges[j-1] ≤ value < edges[j]
-        return j - 1
-    end
-end
-
 # astar_find: find nearest (u,v) with use[u,v]==true, starting from (u0,v0)
 # returns (u_found, v_found, true) or (0,0,false) if none found.
 function astar_find(use::AbstractMatrix{<:Bool}, u0::Int, v0::Int)

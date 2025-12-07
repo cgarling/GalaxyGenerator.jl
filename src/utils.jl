@@ -112,6 +112,46 @@ function interp_log(x::AbstractVector, y::AbstractVector, t; extrapolate=false)
 end
 
 """
+    find_bin(value::Real, edges::AbstractVector{<:Real})
+`edges` is length `nbins + 1` vector of histogram bin edges. Returns the bin index for a histogram which `value` falls into.
+
+```jldoctest
+julia> using GalaxyGenerator.EGG: find_bin
+
+julia> x = 0.1:0.1:1.0;
+
+julia> find_bin(-0.1, x) == 1
+true
+
+julia> find_bin(0.2, x) == 1
+true
+
+julia> find_bin(0.25, x) == 2
+true
+
+julia> find_bin(10.0, x) == 9
+true
+
+julia> find_bin(11.0, x) == 9
+true
+```
+"""
+function find_bin(value::Real, edges::AbstractVector{<:Real})
+    Base.require_one_based_indexing(edges)
+    n = length(edges)
+    n < 2 && return 1 # Degenerate case
+    # Binary search: finds first index j where edges[j] ≥ value
+    j = searchsortedfirst(edges, value)
+    if j == 1 # value < edges[1]  OR  value == edges[1]
+        return 1
+    elseif j > n # value ≥ edges[end]
+        return n - 1
+    else # edges[j-1] ≤ value < edges[j]
+        return j - 1
+    end
+end
+
+"""
     merge_add(x1, x2, y1, y2)
 
 Merge two SED-like templates `(x1,y1)` and `(x2,y2)` into a single `(x, y)` pair by summing

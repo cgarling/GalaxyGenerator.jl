@@ -5,7 +5,7 @@ Contains code to generate galaxy catalogs using methods similar to those used in
 """
 module EGG
 
-using ..GalaxyGenerator: interp_lin, interp_log, merge_add
+using ..GalaxyGenerator: interp_lin, interp_log, merge_add, find_bin
 using ..GalaxyGenerator.IGM: IGMAttenuation, transmission, tau, Inoue2014IGM
 using ..GalaxyGenerator.MassFunctions: BinnedRedshiftMassFunction, DoubleSchechterMassFunction, integrate
 
