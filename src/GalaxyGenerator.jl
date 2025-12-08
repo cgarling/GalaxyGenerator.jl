@@ -2,7 +2,7 @@ module GalaxyGenerator
 
 using ArgCheck: @argcheck, @check
 
-export SchechterMassFunction, DoubleSchechterMassFunction
+export SchechterMassFunction, DoubleSchechterMassFunction, MassFunctionSampler, generate_galaxies, egg
 
 include("utils.jl")
 include("IGM/IGM.jl")
