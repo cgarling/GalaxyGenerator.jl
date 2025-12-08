@@ -12,7 +12,7 @@ Base.Broadcast.broadcastable(m::IGMAttenuation) = Ref(m)
 # Generic methods
 """
     transmission(model::IGMAttenuation, z, λ_r)
-Returns the IGM transmission for light emitted at rest wavelength `λ_r` (in microns) at redshift `z` given the provided IGM transmission model `model`. Defined as `exp(-τ)` where `τ` is the optical depth. Generic implementation is `transmission(tau(model, z, λ_r))`.
+Returns the IGM transmission for light emitted at rest wavelength `λ_r` (in Angstroms) at redshift `z` given the provided IGM transmission model `model`. Defined as `exp(-τ)` where `τ` is the optical depth. Generic implementation is `transmission(tau(model, z, λ_r))`.
 """
 transmission(model::IGMAttenuation, z, λ_r) = transmission(tau(model, z, λ_r))
 
@@ -31,7 +31,7 @@ struct NoIGM <: IGMAttenuation end
 
 """
     tau(model::IGMAttenuation, z, λ_r)
-Returns the IGM optical depth for light emitted at rest wavelength `λ_r` (in microns) at redshift `z` given the provided IGM transmission model `model`.
+Returns the IGM optical depth for light emitted at rest wavelength `λ_r` (in Angstroms) at redshift `z` given the provided IGM transmission model `model`.
 """
 function tau end
 tau(::NoIGM, z, λ_r) = zero(z)
@@ -60,7 +60,6 @@ const madau_lycoeff = (0.0036, 0.0017, 0.0011846, 0.0009410, 0.0007960,
         0.0003334, 0.00031644)
 
 function tau(::Madau1995IGM, z, λ_r)
-    λ_r *= 1e4 # Convert from input microns to Angstroms
     lylim   = 911.75
     a_metal = 0.0017
 
@@ -202,11 +201,9 @@ function tLCLAF(zS::Real, lobs::Real)
 end
 
 # Optical depth function for Inoue2014 model.
-# Input: λ_r in microns (rest-frame). Conversion: 1 micron = 1e4 Angstroms.
+# Input: λ_r in angstroms (rest-frame).
 function tau(model::Inoue2014IGM, z::Real, λ_r::Real)
-    # convert rest-frame wavelength (microns) to observed wavelength in Angstroms
-    l_rest_A = λ_r * 1e4
-    lobs = l_rest_A * (1 + z)
+    lobs = λ_r * (1 + z)
     τ = tLSLAF(z, lobs, model.lam, model.ALAF) +
         tLSDLA(z, lobs, model.lam, model.ADLA) +
         tLCLAF(z, lobs) +
@@ -217,8 +214,8 @@ end
 #########################
 # Generic unitful methods
 for T in (NoIGM, Madau1995IGM, Inoue2014IGM)
-    @eval transmission(s::$T, z, λ_r::u.Length)= transmission(s, z, u.ustrip(u.μm, λ_r))
-    @eval tau(s::$T, z, λ_r::u.Length)= tau(s, z, u.ustrip(u.μm, λ_r))
+    @eval transmission(s::$T, z, λ_r::u.Length)= transmission(s, z, u.ustrip(u.angstrom, λ_r))
+    @eval tau(s::$T, z, λ_r::u.Length)= tau(s, z, u.ustrip(u.angstrom, λ_r))
 end
 
 end # module IGM

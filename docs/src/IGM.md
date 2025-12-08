@@ -20,14 +20,12 @@ Below we use Makie.jl to plot a comparison between the different IGM attenuation
 
 ```@example plotting
 using CairoMakie
-set_theme!(theme_latexfonts(); fontsize = 25, size = (700, 600), 
-    Axis = (xminorticksvisible=true, yminorticksvisible=true, xminorticks = IntervalsBetween(5), yminorticks = IntervalsBetween(5), xticksize=10.0, yticksize=10.0)
-)
 using GalaxyGenerator.IGM
 models = [Madau1995IGM(), Inoue2014IGM()]
 ls = [:dash, :solid]
 labels = ["Madau1995IGM", "Inoue2014IGM"]
-λ_o = 0.3:0.01:1.0 # 0.3 to 1.0 μm observer-frame wavelengths
+# λ_o = 0.3:0.01:1.0 # 0.3 to 1.0 μm observer-frame wavelengths
+λ_o = 3000:10:10000 # 3k to 10k angstroms; 0.3 to 1.0 μm observer-frame wavelengths
 z  = [2, 3, 4, 5, 6]
 
 fig = Figure()
@@ -36,7 +34,7 @@ for i in eachindex(z)
     λ_r = λ_o ./ (1 + z[i])
     for j in eachindex(models)
         trans = transmission.(models[j], z[i], λ_r)
-        lines!(ax, λ_o .* 1e4, trans, color = :black, linestyle=ls[j]) # label=labels[j],
+        lines!(ax, λ_o, trans, color = :black, linestyle=ls[j]) # label=labels[j],
         text!(ax, 3900, 0.97; text=L"z_S=2", align=(:left, :top), space = :data)
         text!(ax, 5100, 0.97; text=L"z_S=3", align=(:left, :top), space = :data)
         text!(ax, 6200, 0.97; text=L"z_S=4", align=(:left, :top), space = :data)
@@ -45,7 +43,7 @@ for i in eachindex(z)
     end
 end
 ax.xticks = collect(range(3000, 9000; step=1000))
-xlims!(ax, minimum(λ_o) * 1e4, maximum(λ_o) * 1e4)
+xlims!(ax, minimum(λ_o), maximum(λ_o))
 
 legend_elements = [LineElement(color = :black, linestyle = ls[i], label = labels[i]) for i in eachindex(models)]
 legend = Legend(fig[1, 1], legend_elements, labels, orientation = :vertical,

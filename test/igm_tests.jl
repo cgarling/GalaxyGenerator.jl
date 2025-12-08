@@ -3,8 +3,10 @@ import Unitful as u
 using Test
 
 @testset "IGM" begin
-    x = 0.35:0.001:0.55 # microns
-    x_u = x * u.μm
+    # x = 0.35:0.001:0.55 # microns
+    # x_u = x * u.μm
+    x = 3500:10:5500 # microns
+    x_u = x * u.angstrom
     z_arr = 0.0:0.1:5.5
     @testset "NoIGM" begin
         s = NoIGM()
@@ -17,8 +19,8 @@ using Test
     end
     @testset "Madau1995IGM" begin
         s = Madau1995IGM()
-        @test isapprox(transmission(s, 3.5, 0.11), 0.617783510515702; rtol=1e-5)
-        @test isapprox(tau(s, 3.5, 0.11), -log(0.617783510515702); rtol=1e-5)
+        @test isapprox(transmission(s, 3.5, 1100), 0.617783510515702; rtol=1e-5)
+        @test isapprox(tau(s, 3.5, 1100), -log(0.617783510515702); rtol=1e-5)
         for z in z_arr
             r = transmission.(s, z, x)
             @test r isa Vector{Float64}
@@ -30,8 +32,8 @@ using Test
     end
     @testset "Inoue2014IGM" begin
         s = Inoue2014IGM()
-        @test isapprox(transmission(s, 3.5, 0.11), 0.6516501946923478; rtol=1e-5)
-        @test isapprox(tau(s, 3.5, 0.11), -log(0.6516501946923478); rtol=1e-5)
+        @test isapprox(transmission(s, 3.5, 1100), 0.6516501946923478; rtol=1e-5)
+        @test isapprox(tau(s, 3.5, 1100), -log(0.6516501946923478); rtol=1e-5)
         for z in z_arr
             r = transmission.(s, z, x)
             @test r isa Vector{Float64}
