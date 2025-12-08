@@ -14,7 +14,7 @@ GalaxyGenerator.EGG.EGGMassFunction_Q
 
 These mass functions are plotted below.
 
-```@example
+```@example plotting
 using CairoMakie
 using GalaxyGenerator.EGG: EGGMassFunction_SF, EGGMassFunction_Q
 
@@ -62,6 +62,34 @@ ylims!(ax1, 1e-5, 1e-1)
 xlims!(ax1, 1e8, 1e12)
 xlims!(ax2, 1e8, 1e12)
 
+fig
+```
+
+
+# SED Templates
+SED templates from [Schreiber2017](@citet) are tabulated as a function of U-V and V-J colors. An SED template is chosen for each galaxy by finding the nearest valid template to its sampled colors. Below we show the SED template grid, where U-V vs V-J bins with a valid SED template are yellow.
+
+```@example plotting
+using GalaxyGenerator.EGG: optlib
+
+# Create the figure
+fig = Figure(size=(800,800))
+ax = Axis(fig[1, 1],
+    title = "Valid SED Templates",
+    xlabel = "U-V",
+    ylabel = "V-J")
+
+# Plot the heatmap
+# heatmap!(ax, optlib.buv, optlib.bvj, optlib.use; colormap = :viridis)
+# heatmap!(ax, optlib.bvj, optlib.buv, transpose(optlib.use); colormap = :viridis, categorical=true)
+hm = heatmap!(ax, optlib.bvj, optlib.buv, transpose(optlib.use); colormap = Categorical(:viridis))
+# Plot sequence
+vj = -1.0:0.1:2.5
+uv = 0.65 .* vj .+ 0.45
+lines!(ax, uv, vj, color=:red, linewidth=2)
+Colorbar(fig[1,2], hm, size=40) # , tellheight=false, tellwidth=false)
+
+# Display the figure
 fig
 ```
 

@@ -2,6 +2,12 @@ using GalaxyGenerator
 using Documenter
 using DocumenterCitations: CitationBibliography
 
+using CairoMakie
+# Makie plotting options
+set_theme!(theme_latexfonts(); fontsize = 30, size = (800, 800), 
+    Axis = (xminorticksvisible=true, yminorticksvisible=true, xminorticks = IntervalsBetween(5), yminorticks = IntervalsBetween(5), xticksize=10.0, yticksize=10.0)
+)
+
 # Check if on CI
 const CI = get(ENV, "CI", nothing) == "true"
 
@@ -26,7 +32,7 @@ makedocs(;
         "refs.md",
     ],
     doctest = false,
-    linkcheck = true,
+    linkcheck = CI,
     warnonly = [:missing_docs, :linkcheck],
     plugins = [bib]
 )
