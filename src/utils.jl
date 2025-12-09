@@ -245,60 +245,32 @@ function merge_add(x1::AbstractVector{T1}, x2::AbstractVector{T2},
     return xout, yout
 end
 
-# function lsun2uJy(lam, lum)
-#     Mpc = 3.0856e22 # [m/Mpc]
-#     Lsol = 3.839e26 # [W/Lsol]
-#     uJy = 1.0e32    # [uJy/(W.m-2.Hz-1)]
-#     c = 2.9979e14   # [um.s-1]
-#     factor = uJy * Lsol / (c * 4 * π * Mpc * Mpc)
-#     return factor * lam * lum
-# end
-# function lsun2Jy(lam, lum)
-#     Mpc = 3.0856e22 # [m/Mpc]
-#     Lsol = 3.839e26 # [W/Lsol]
-#     Jy = 1e26       # [Jy/(W.m-2.Hz-1)]
-#     c = 2.9979e14   # [um.s-1]
-#     factor = Jy * Lsol / (c * 4 * π * Mpc * Mpc)
-#     return factor * lam * lum
-# end
-# function lsun2Jy(lam, lum)
-#     Mpc = 3.0856e22 # [m/Mpc]
-#     Lsol = 3.839e26 # [W/Lsol]
-#     Jy = 1e26       # [Jy/(W.m-2.Hz-1)]
-#     c = 2.9979e18   # [angstrom.s-1]
-#     factor = Jy * Lsol / (c * 4 * π * Mpc * Mpc)
-#     return factor * lam * lum
-# end
-function lsun2Jy(lam, lum, d=1e-5) # d in Mpc, default 10 pc
-    Mpc = 3.0856e22 # [m/Mpc]
-    Lsol = 3.839e26 # [W/Lsol]
-    Jy = 1e26       # [Jy/(W.m-2.Hz-1)]
-    c = 2.9979e18   # [angstrom.s-1]
+"""
+    lsun2Jy(lam, lum)
+Convert solar luminosities to Jansky at distance 10 pc. Used for normalizing SEDs from EGG.
+"""
+function lsun2Jy(lam, lum)
+    d = 1e-5                   # 10 pc in Mpc, to place flux in absolute units
+    Mpc = 3.085677581491367e22 # [m/Mpc]
+    Lsol = 3.828e26            # [W/Lsol], IAU Resolution B3
+    Jy = 1e26                  # [Jy/(W.m-2.Hz-1)]
+    c = 2.99792458e18          # [angstrom.s-1]
     factor = Jy * Lsol / (c * 4 * π * Mpc * Mpc)
     return factor * lam * lum / d^2
 end
-# function uJy2cgs(lam, f_nu) # uJy is spectral flux density f_ν
-#     f_nu *= 1e-6 # convert to Jy
-#     return Jy2cgs(lam, f_nu)
-# end
+"""
+    Jy2cgs(lam, f_nu)
+Convert flux density from Jansky to CGS flux units (erg/s/cm²/Å) at wavelength `lam` (in angstrom).
+"""
 function Jy2cgs(lam, f_nu)
-    return 760603//25370985150 * f_nu / lam^2 # for lam in angstrom
-    # return f_nu * 2.9979e-5 / lam^2 # for lam in angstrom
+    c = 2.99792458e8 # [m/s]
+    return c / 10^8 / 10^5 * f_nu / lam^2 # for lam in angstrom
 end
-# lsun2cgs(lam, lum, d=1e-5) = Jy2cgs(lam, lsun2Jy(lam, lum, d))
-# function lsun2cgs(lam, lum)
-#     d = 10 # Evaluate at 10 pc to get absolute flux
-#     pc = 3.085677581491367e16  # [m/pc]
-#     Lsol = 3.828e26 # [W/Lsol]
-#     Jy = 1e26       # [Jy/(W.m-2.Hz-1)]
-#     c = 2.99792458e18   # [angstrom.s-1]
-#     # factor = Jy * Lsol / (c * 4 * π * pc^2)
-#     # f_nu = factor * lam * lum / d^2 # f_nu in jy
-#     factor = 1.0671863745933612
-#     f_nu = factor * lam * lum / 100 # f_nu in jy
-#     return 2.99792458e-5 * f_nu / lam^2
-# end
-
+"""
+    lsun2cgs(lam, lum)
+Convert solar luminosities to CGS flux units (erg/s/cm²/Å) at 10 pc. Used for normalizing SEDs from EGG.
+"""
+lsun2cgs(lam, lum) = Jy2cgs(lam, lsun2Jy(lam, lum))
 
 # """
 #     magnitude_fast(f::AbstractFilter, T::MagnitudeSystem, wavelengths, flux)
