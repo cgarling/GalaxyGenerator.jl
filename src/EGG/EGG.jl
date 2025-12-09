@@ -367,18 +367,16 @@ function egg(
     logMstar = log10(Mstar)
     dmod = distmod(cosmo, z) # Cosmological distance modulus at redshift z
 
-    # Get optical SEDs; SEDs returned in units of L⊙ / μm / M⊙, λ in μm
+    # Get optical SEDs; SEDs returned in units of erg/s/cm^2/Å at 10 pc per unit stellar mass
     m2l_cor = get_m2l_cor(z) # M/L correction in dex
     λ_disk, sed_disk, Av_disk = get_opt_sed(r.uv_disk, r.vj_disk, optlib)
     λ_bulge, sed_bulge, Av_bulge = get_opt_sed(r.uv_bulge, r.vj_bulge, optlib)
-    # Convert SED to units of erg Å^-1 cm^-2 s^-1 and place at distance of 10 pc for absolute mags
-    # 1 * UnitfulAstro.Lsun / u"μm" / (4π * (10u"pc")^2) |> u"erg" / u"s" / u"cm^2" / u"angstrom"
-    sed_disk .*= exp10(log10(r.Mdisk) - m2l_cor) * 3.1993443f-11
-    sed_bulge .*= exp10(log10(r.Mbulge) - m2l_cor) * 3.1993443f-11
+    sed_disk .*= exp10(log10(r.Mdisk) - m2l_cor)
+    sed_bulge .*= exp10(log10(r.Mbulge) - m2l_cor)
 
     # Get IR SED
     ir_result = get_ir_sed(r.Tdust, irlib)
-    ir_λ = ir_result.lam # microns
+    ir_λ = ir_result.lam # angstroms
 
     # Correct fpah, if necessary
     fpah = if typeof(irlib) == CS17_IRLib
@@ -396,12 +394,11 @@ function egg(
         r.lir / 1e3
     end
 
-    # Calculate final ir_sed in units of erg Å^-1 cm^-2 s^-1
     ir_sed = if typeof(irlib) == CS17_IRLib
-        # CS_17 library is in units of L⊙ / μm / M⊙ of dust
-        @. (ir_result.dust * (1 - Float32(fpah)) + ir_result.pah * Float32(fpah)) * Float32(Mdust) * 3.1993443f-11
+        # ir_sed is returned from get_ir_sed in erg/s/cm^2/Å at 10 pc per unit dust mass
+        @. (ir_result.dust * (1 - Float32(fpah)) + ir_result.pah * Float32(fpah)) * Float32(Mdust)
     else
-        ir_result.sed .* 3.1993443f-11 # Assume in L⊙ / μm, convert to erg Å^-1 cm^-2 s^-1 at 10 pc
+        ir_result.sed # Assumes SED returned from get_ir_sed is in erg/s/cm^2/Å at 10 pc already
     end
 
     ################
@@ -440,7 +437,6 @@ function egg(
     # Merge optical and IR SEDs
     opt_λ, opt_sed = merge_add(λ_bulge, λ_disk, sed_bulge, sed_disk)
     λ, sed = merge_add(opt_λ, ir_λ, opt_sed, ir_sed)
-    λ .*= 1f4 # convert μm to Å
 
     # Obtain rest-frame magnitudes
     # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now

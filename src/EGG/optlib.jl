@@ -23,6 +23,35 @@
 # EGG converts to μJy 
 
 """
+    lsun2Jy(lam, lum)
+Convert solar luminosities to Jansky at distance 10 pc. Used for normalizing SEDs from EGG.
+"""
+function lsun2Jy(lam, lum)
+    d = 1e-5                   # 10 pc in Mpc, to place flux in absolute units
+    Mpc = 3.085677581491367e22 # [m/Mpc]
+    Lsol = 3.828e26            # [W/Lsol], IAU Resolution B3
+    Jy = 1e26                  # [Jy/(W.m-2.Hz-1)]
+    c = 2.99792458e18          # [angstrom.s-1]
+    factor = Jy * Lsol / (c * 4 * π * Mpc * Mpc)
+    return factor * lam * lum / d^2
+end
+
+"""
+    Jy2cgs(lam, f_nu)
+Convert flux density from Jansky to CGS flux units (erg/s/cm²/Å) at wavelength `lam` (in angstrom).
+"""
+function Jy2cgs(lam, f_nu)
+    c = 2.99792458e8 # [m/s]
+    return c / 10^8 / 10^5 * f_nu / lam^2
+end
+
+"""
+    lsun2cgs(lam, lum)
+Convert solar luminosities to CGS flux units (erg/s/cm²/Å) at 10 pc. Used for normalizing SEDs from EGG.
+"""
+lsun2cgs(lam, lum) = Jy2cgs(lam, lsun2Jy(lam, lum))
+
+"""
     _check_lam(lam)
 Returns true if `lam[:,i,:] == lam[:,:,i]` for all valid indices `i`, indicating that the array is mirrored. Check that all the optical SED library files have uniform lambda vectors.
     
@@ -80,7 +109,9 @@ function OptLib(fname::AbstractString=joinpath(@__DIR__, "data", "opt_lib_fast_n
     FITS(fname, "r") do f
         hdu = f[2]
         lam = read(hdu, "LAM")[:,:,:,1]
+        lam .*= 1f4 # convert microns to angstroms
         sed = read(hdu, "SED")[:,:,:,1]
+        @. sed = lsun2cgs(lam, sed) # convert from Lsun/Msun to erg/s/cm²/Å per Msun
         buv = read(hdu, "BUV")
         buv = vcat(buv[:,1,1], buv[end,2,1]) # Reduce to vector of bin edges, length nbins + 1
         @argcheck issorted(buv)
@@ -92,24 +123,6 @@ function OptLib(fname::AbstractString=joinpath(@__DIR__, "data", "opt_lib_fast_n
 
         return OptLib(lam, sed, use, av, buv, bvj)
     end
-end
-
-# Build idxmap and used_coords for OptLib
-function build_idxmap(USE::BitMatrix)
-    nu, nv = size(USE)
-    idxmap = zeros(Int, nu, nv)
-    used = Vector{Tuple{Int,Int}}()
-    k = 1
-    for u in 1:nu, v in 1:nv
-        if USE[u,v]
-            idxmap[u,v] = k
-            push!(used, (u,v))
-            k += 1
-        else
-            idxmap[u,v] = 0
-        end
-    end
-    return idxmap, used
 end
 
 # astar_find: find nearest (u,v) with use[u,v]==true, starting from (u0,v0)
@@ -163,14 +176,14 @@ end
 Retrieves optical SED from `optlib` for galaxy with provided `uv` U-V color and `vj` V-J color. 
 
 Returns
- - `lambda` wavelength in microns
- - `sed` spectral energy distribution in L⊙ / μm / M⊙
- - `Av` V-band extinction in magnitude of the 
+ - `lambda` wavelength in Å
+ - `sed` spectral energy distribution in CGS units (erg/s/cm²/Å) at 10 pc (absolute units) normalized per unit stellar mass (Msun)
+ - `Av` internal V-band extinction in magnitudes of the selected template. This is output from the SED fitting code used to build the library and this extinction is already applied to the SED.
 """
 function get_opt_sed(uv, vj, optlib::OptLib)
     u, v = get_sed_uvj(uv, vj, optlib)
-    lam = optlib.lam[:, u, v] # units of μm
-    sed = optlib.sed[:, u, v] # units of L⊙ / μm / M⊙
+    lam = optlib.lam[:, u, v]   # pre-converted to angstroms in OptLib constructor
+    sed = optlib.sed[:, u, v]   # pre-converted to erg/s/cm²/Å per Msun in OptLib constructor
     Av = optlib.av[u, v]
     return lam, sed, Av
 end
@@ -194,12 +207,16 @@ function CS17_IRLib(fname::AbstractString=joinpath(@__DIR__, "data", "ir_lib_cs1
     FITS(fname, "r") do f
         hdu = f[2]
         lam = read(hdu, "LAM")[:,:,1]
-        # Check that all columns are the same, then reduce lam to vector
+        lam .*= 1f4 # convert microns in file to angstroms
+        # Convert dust and pah SEDs from L⊙ / Mdust to cgs erg/s/cm²/Å per Mdust
+        dust = read(hdu, "DUST")[:,:,1]
+        pah = read(hdu, "PAH")[:,:,1]
+        @. dust = lsun2cgs(lam, dust)
+        @. pah = lsun2cgs(lam, pah)
+        # Check that all wavelength columns are the same, then reduce lam to vector
         @check all(map(==(view(lam, :, 1)), eachcol(lam)))
         lam = lam[:,1]
         @check issorted(lam)
-        dust = read(hdu, "DUST")[:,:,1]
-        pah = read(hdu, "PAH")[:,:,1]
         tdust = read(hdu, "TDUST")[:,1]
         @argcheck issorted(tdust)
         lir_dust = read(hdu, "LIR_DUST")[:,1]
@@ -212,11 +229,20 @@ end
 
 """
     get_ir_sed(tdust, irlib::CS17_IRLib)
-Retrieves the appropriate IR SED from the Schreiber+2017 library given the dust temperature `tdust` in Kelvin of a galaxy. If return value is `r`, `r.dust` contains dust SED and `r.pah` contains PAH sed, both in units of 
+Retrieves the appropriate IR SED from the Schreiber+2017 library given the dust temperature `tdust` in Kelvin of a galaxy.
+
+Returns
+A `NamedTuple` with fields:
+ - `lam` wavelength in Å
+ - `dust` spectral energy distribution of dust in CGS units (erg/s/cm²/Å) at 10 pc (absolute units) normalized per unit dust mass (Msun)
+ - `pah` spectral energy distribution of PAHs in CGS units (erg/s/cm²/Å) at 10 pc (absolute units) normalized per unit dust mass (Msun)
+ - `lir_dust` total IR luminosity from dust component in L⊙ per unit dust mass (Msun)
+ - `lir_pah` total IR luminosity from PAH component in L⊙ per unit dust mass (Msun)
+ - `l8_dust` 8μm luminosity from dust component in L⊙ per unit dust mass (Msun)
+ - `l8_pah` 8μm luminosity from PAH component in L⊙ per unit dust mass (Msun)
 """
 function get_ir_sed(tdust, irlib::CS17_IRLib)
     i = find_bin(tdust, irlib.tdust)
-    dust = view(irlib.dust,:,i)
-    pah = view(irlib.pah,:,i)
-    return (lam = irlib.lam, dust = dust, pah = pah, lir_dust = irlib.lir_dust[i], lir_pah = irlib.lir_pah[i], l8_dust = irlib.l8_dust[i], l8_pah = irlib.l8_pah[i])
+    # lam is pre-converted to angstrom, dust and pah SEDs to erg/s/cm²/Å per Mdust in CS17_IRLib constructor
+    return (lam = irlib.lam, dust = irlib.dust[:,i], pah = irlib.pah[:,i], lir_dust = irlib.lir_dust[i], lir_pah = irlib.lir_pah[i], l8_dust = irlib.l8_dust[i], l8_pah = irlib.l8_pah[i])
 end
