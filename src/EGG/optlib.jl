@@ -45,18 +45,18 @@ function _check_lam(lam)
     _, n1, n2 = size(lam)
     n1 == n2 || return false  # must be square in the last two dims
 
-    for i in 1:n1
-        @views if lam[:, i, :] != lam[:, :, i]
-            return false
-        end
-    end
     # for i in 1:n1
-    #     for j in 1:n2
-    #         @views if lam[:,i,j] != lam[:,1,1]
-    #             return false
-    #         end
+    #     @views if lam[:, i, :] != lam[:, :, i]
+    #         return false
     #     end
     # end
+    for i in 1:n1
+        for j in 1:n2
+            @views if lam[:,i,j] != lam[:,1,1]
+                return false
+            end
+        end
+    end
 
     return true
 end
@@ -75,9 +75,6 @@ struct OptLib
     av::Matrix{Float32}
     buv::Vector{Float32}   # U-V bin definition, length(nbins) + 1
     bvj::Vector{Float32}   # V-J bin definition, length(nbins) + 1
-    # derived index map built by build_idxmap
-    idxmap::Matrix{Int}   # idxmap[u,v] -> used-template index (1-based) or 0 if unused
-    used_coords::Vector{Tuple{Int,Int}} # reverse map: used_coords[ised] = (u,v)
 end
 function OptLib(fname::AbstractString=joinpath(@__DIR__, "data", "opt_lib_fast_noigm.fits"))
     FITS(fname, "r") do f
@@ -93,8 +90,7 @@ function OptLib(fname::AbstractString=joinpath(@__DIR__, "data", "opt_lib_fast_n
         use = convert.(Bool, read(hdu, "USE")[:,:,1])
         av = read(hdu, "AV")[:,:,1]
 
-        idxmap, used = build_idxmap(use)
-        return OptLib(lam, sed, use, av, buv, bvj, idxmap, used)
+        return OptLib(lam, sed, use, av, buv, bvj)
     end
 end
 
@@ -142,25 +138,24 @@ function astar_find(use::AbstractMatrix{<:Bool}, u0::Int, v0::Int)
 end
 
 """
-    get_sed_uvj(uv, vj, optlib::OptLib; doprint=false)
+    get_sed_uvj(uv, vj, optlib::OptLib)
 
-Map rest-frame UV (`uv`) and VJ (`vj`) colors to template indices (`ised`). `ised` is a 1-based index into the compact list of usable templates (matching `optlib.av`). If no valid template could be found for an object, ised[i] == 0 and avs[i] == NaN.
+Map rest-frame U-V (`uv`) and V-J (`vj`) colors to template indices (`ised`). `ised` is a 1-based index into the compact list of usable templates (matching `optlib.av`). If no valid template could be found for an object, ised[i] == 0 and avs[i] == NaN.
 """
-function get_sed_uvj(uv, vj, optlib::OptLib; doprint::Bool=false)
+function get_sed_uvj(uv, vj, optlib::OptLib)
     u = find_bin(uv, optlib.buv)
     v = find_bin(vj, optlib.bvj)
 
     if optlib.use[u, v]
-        ised = optlib.idxmap[u, v]
+        return u, v
     else
-        uu, vv, ok = astar_find(optlib.use, u, v)
+        u, v, ok = astar_find(optlib.use, u, v)
         if !ok
             error("No valid template found for U-V = $uv, V-J=$vj.")
         else
-            ised = optlib.idxmap[uu, vv]
+            return u, v
         end
     end
-    return ised
 end
 
 """
@@ -173,23 +168,11 @@ Returns
  - `Av` V-band extinction in magnitude of the 
 """
 function get_opt_sed(uv, vj, optlib::OptLib)
-    ised = get_sed_uvj(uv, vj, optlib)
-    @argcheck ised > 0
-    if ised > length(optlib.used_coords)
-        error("`ised` $ised out of range")
-    end
-    (u, v) = optlib.used_coords[ised]
+    u, v = get_sed_uvj(uv, vj, optlib)
     lam = optlib.lam[:, u, v] # units of μm
     sed = optlib.sed[:, u, v] # units of L⊙ / μm / M⊙
     Av = optlib.av[u, v]
     return lam, sed, Av
-    # sed .*= Mstar # Units of L⊙ / μm
-    # # 1 * UnitfulAstro.Lsun / u"μm" |> u"W" / u"m" = 3.828e32 W m^-1
-    # # sed .*= 3.828f32 # Units of W / m
-    # # 1 * UnitfulAstro.Lsun / u"μm" / (4π * (10u"pc")^2) |> u"erg" / u"s" / u"cm^2" / u"angstrom"
-    # # F_λ = sed .* 3.1993443f-11 # Units of erg Å^-1 cm^-2 s^-1
-    # sed .*= 3.1993443f-11 # Units of erg Å^-1 cm^-2 s^-1
-    # return lam, sed, Av
 end
 
 # Computing magnitude takes ~20μs per filter
