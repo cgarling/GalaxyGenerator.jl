@@ -98,12 +98,15 @@ end
 
 #########################################
 # Inoue2014 model #######################
+
 """
     Inoue2014IGM()
 
 Implements the analytic IGM transmission model from [Inoue2014](@citet). This model accounts for 
 Lyman-α forest, dampled Lyman-α, Lyman-series, and Lyman-continuum absorption by the intergalactic medium (IGM).
 Computing the [`transmission`](@ref GalaxyGenerator.IGM.transmission) takes roughly 675 ns.
+
+Because this model takes some time to initialize and takes no arguments, we provide a pre-initialized instance as the constant `GalaxyGenerator.IGM.Inoue2014`.
 """
 struct Inoue2014IGM <: IGMAttenuation
     lam::Vector{Float32}   # wavelengths (Angstroms) for Lyman series lines
@@ -121,6 +124,9 @@ function Inoue2014IGM()
     @check lam == dla[:, 2] "Wavelengths in LAF and DLA files do not match."
     return Inoue2014IGM(lam, laf[:, 3:end], dla[:, 3:end])
 end
+
+"""Pre-initialized [`Inoue2014IGM`](@ref) model instance."""
+const Inoue2014 = Inoue2014IGM()
 
 # Lyman series optical depth by the DLA component
 function tLSDLA(zS::Real, lobs::Real, line_λ::AbstractVector{<:Real}, A::AbstractMatrix{<:Real})

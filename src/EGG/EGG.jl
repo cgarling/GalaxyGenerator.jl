@@ -6,7 +6,7 @@ Contains code to generate galaxy catalogs using methods similar to those used in
 module EGG
 
 using ..GalaxyGenerator: interp_lin, interp_log, merge_add, find_bin, f_sky
-using ..GalaxyGenerator.IGM: IGMAttenuation, transmission, tau, Inoue2014IGM
+using ..GalaxyGenerator.IGM: IGMAttenuation, transmission, tau, Inoue2014
 using ..GalaxyGenerator.MassFunctions: RedshiftMassFunction, RedshiftMassFunctionSampler, MassFunctionSampler, BinnedRedshiftMassFunction, DoubleSchechterMassFunction, integrate
 
 using ArgCheck: @argcheck, @check
@@ -64,7 +64,7 @@ const EGGMassFunction_Q = BinnedRedshiftMassFunction(
 """
     get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, mag_sys::MagnitudeSystem; 
                    Mstar=logrange(1e6, 1e13; length=100), cosmo::AbstractCosmology=Planck18, optlib::OptLib=optlib,
-                   igm::IGMAttenuation=Inoue2014IGM())
+                   igm::IGMAttenuation=Inoue2014)
 
 Given a redshift `z`, whether the galaxy is star-forming (`SF::Bool`), an apparent magnitude limit `mag_lim` in the filter `filt` with magnitude system `mag_sys`, returns the stellar mass limit `Mstar` (in M⊙) required to reach that magnitude limit.
 
@@ -103,7 +103,7 @@ function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, mag_sys::Mag
 end
 function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, zpt; 
     Mstar=logrange(1e6, 1e13; length=100), cosmo::AbstractCosmology=Planck18, optlib::OptLib=optlib,
-    igm::IGMAttenuation=Inoue2014IGM())
+    igm::IGMAttenuation=Inoue2014)
     # Generate Mstar - flux relation
     m2l_cor = get_m2l_cor(z) # M/L correction in dex
     # zpt = zeropoint_mag(filt, mag_sys)
@@ -113,12 +113,11 @@ function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, zpt;
         # Get UV, VJ colors, optical SED
         uv, vj = uv_vj(log10(Mstar[i]), z, SF; rng=nothing)
         λ, sed = get_opt_sed(uv, vj, optlib)
-        # Convert SED to units of erg Å^-1 cm^-2 s^-1, place at 10 pc for absolute mags
-        sed .*= exp10(log10(Mstar[i]) - m2l_cor) * 3.1993443f-11
+        # Convert SED to units of erg Å^-1 cm^-2 s^-1
+        sed .*= exp10(log10(Mstar[i]) - m2l_cor)
         # Add IGM attenuation; this takes most of the runtime
-        sed .*= transmission.(igm, z, λ)
+        @. sed *= transmission(igm, z, λ)
         λ .*= 1 + z # Redshift wavelengths
-        λ .*= 1f4   # convert μm to Å
         # mags[i] = magnitude(filt, mag_sys, λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) + distmod(cosmo, z)
         fbar = mean_flux_density(λ, sed, filt.(λ), detector_type(filt))
         mags[i] = magnitude(fbar, zpt) + distmod(cosmo, z)
@@ -132,7 +131,8 @@ function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, zpt;
         @warn "The maximum stellar mass $(last(Mstar)) provided to `get_mass_limit` for redshift $z is too low to sample galaxies brighter than the requested magnitude limit $mag_lim. Returning $(last(Mstar))."
         return Mstar[end]
     else
-        # Assumes monotonically decreasing mags with Mstar, not true in general
+        # Assumes monotonically decreasing mags with Mstar, this is true for low mass galaxies
+        # but breaks down for higher masses (>1e10)
         # mass_lim = Mstar[searchsortedfirst(mags, mag_lim; rev=true)]
         # mass_lim = interp_log(reverse(mags), reverse(Mstar), mag_lim)
         # Mstar sorted from low mass to high mass -> just find first entry where mags <= mag_lim
@@ -345,7 +345,9 @@ function egg(Mstar, z, SF::Bool,
     rng::Union{Nothing,AbstractRNG}=default_rng(),
     kws...)
 
-    return egg(egg(Mstar, z, SF; rng=rng), filters, zpts; rng=rng, kws...)
+    # return egg(egg(Mstar, z, SF; rng=rng), filters, zpts; rng=rng, kws...)
+    r = egg(Mstar, z, SF; rng=rng)
+    return egg(r, filters, zpts; rng=rng, kws...)
 end
 
 function egg(
@@ -357,7 +359,7 @@ function egg(
     rng::Union{Nothing,AbstractRNG}=default_rng(), 
     optlib::OptLib=optlib,
     irlib::IRLib=irlib,
-    igm::IGMAttenuation=Inoue2014IGM(),
+    igm::IGMAttenuation=Inoue2014,
     extinction_law::ExtinctionLaw=CCM89(Rv=3.1),
     Av::Number=0.0 # Foreground MW extinction in V-band magnitude
     )
@@ -396,7 +398,8 @@ function egg(
 
     ir_sed = if typeof(irlib) == CS17_IRLib
         # ir_sed is returned from get_ir_sed in erg/s/cm^2/Å at 10 pc per unit dust mass
-        @. (ir_result.dust * (1 - Float32(fpah)) + ir_result.pah * Float32(fpah)) * Float32(Mdust)
+        dust, pah = ir_result.dust, ir_result.pah
+        @. Float32((dust * (1 - fpah) + pah * fpah) * Mdust)
     else
         ir_result.sed # Assumes SED returned from get_ir_sed is in erg/s/cm^2/Å at 10 pc already
     end
@@ -454,11 +457,6 @@ function egg(
         @. τ += extinction_law(λ) * Av / (2.5 * log10(ℯ)) # The constant is ~1.086
     end
     @. sed *= exp(-τ)
-
-    # In EGG, IGM absorption is only applied in 3 wavelength bins, I think
-    # we will do full transmission over the entire SED. For this reason EGG
-    # has to compute IGM transmission separately for the lines and for the binned SED,
-    # but we will just add the emission lines to the SED and then apply the IGM absorption once
 
     # Redshift SED, obtain observed magnitudes
     λ .*= 1 + z
@@ -574,7 +572,7 @@ end
 function generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, mag_lim, mag_lim_idx::Int, filters::AbstractVector{<:AbstractFilter}, zpts::AbstractVector;
     cosmo::AbstractCosmology=Planck18,
     optlib::OptLib=optlib,
-    igm::IGMAttenuation=Inoue2014IGM(),
+    igm::IGMAttenuation=Inoue2014,
     q_massfunc::RedshiftMassFunction=EGGMassFunction_Q,
     sf_massfunc::RedshiftMassFunction=EGGMassFunction_SF,
     npoints_mass::Int=100, npoints_redshift::Int=100,
@@ -646,11 +644,6 @@ function generate_galaxies(
     use_rng::Bool=true,  # We *have* to use random sampling for redshifts, stellar masses, but RNG for galaxy properties is optional
     poisson::Bool=false, # Whether to add Poisson scatter to number of galaxies (true) or just return expected number (false)
     kws...)
-    # optlib::OptLib=optlib,
-    # irlib::IRLib=irlib,
-    # igm::IGMAttenuation=Inoue2014IGM(),
-    # extinction_law::ExtinctionLaw=CCM89(Rv=3.1),
-    # Av::Number=0.0) # Foreground MW extinction in V-band magnitude)
 
     @argcheck 0 < area_deg2 < 4π * (180/π)^2 "Area in deg² must be between 0 and the full sky (~41253 deg²)."
     # Retrieve mass and redshift limits from samplers
