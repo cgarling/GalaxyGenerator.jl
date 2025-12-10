@@ -244,5 +244,5 @@ A `NamedTuple` with fields:
 function get_ir_sed(tdust, irlib::CS17_IRLib)
     i = find_bin(tdust, irlib.tdust)
     # lam is pre-converted to angstrom, dust and pah SEDs to erg/s/cm²/Å per Mdust in CS17_IRLib constructor
-    return (lam = irlib.lam, dust = irlib.dust[:,i], pah = irlib.pah[:,i], lir_dust = irlib.lir_dust[i], lir_pah = irlib.lir_pah[i], l8_dust = irlib.l8_dust[i], l8_pah = irlib.l8_pah[i])
+    return (lam = copy(irlib.lam), dust = irlib.dust[:,i], pah = irlib.pah[:,i], lir_dust = irlib.lir_dust[i], lir_pah = irlib.lir_pah[i], l8_dust = irlib.l8_dust[i], l8_pah = irlib.l8_pah[i])
 end
