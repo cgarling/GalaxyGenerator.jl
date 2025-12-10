@@ -173,6 +173,37 @@ Behavior:
 - When x values are equal, the y values are summed directly.
 
 Returns `(xout, yout)`.
+
+# Example usage of `merge_add`
+```jldoctest
+julia> using GalaxyGenerator.EGG: merge_add
+
+julia> x1 = [1.0, 2.0, 2.5, 3.0];
+
+julia> y1 = [10.0, 20.0, 25.0, 30.0];
+
+julia> x2 = [2.0, 3.0, 4.0];
+
+julia> y2 = [15.0, 25.0, 35.0];
+
+julia> xout, yout = merge_add(x1, x2, y1, y2);
+
+julia> xout
+5-element Vector{Float64}:
+ 1.0
+ 2.0
+ 2.5
+ 3.0
+ 4.0
+
+julia> yout
+5-element Vector{Float64}:
+ 10.0
+ 35.0
+ 45.0
+ 55.0
+ 35.0
+```
 """
 function merge_add(x1::AbstractVector{T1}, x2::AbstractVector{T2},
                    y1::AbstractVector{U1}, y2::AbstractVector{U2}) where {T1,T2,U1,U2}
