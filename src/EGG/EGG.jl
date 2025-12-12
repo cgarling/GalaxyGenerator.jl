@@ -708,11 +708,18 @@ function generate_galaxies(
     results = Vector{typeof(r1)}(undef, N_sf + N_q)
     results[1] = r1
     Threads.@threads for i in 1:N_sf
-        results[i] = egg(sf[1, i], sf[2, i], true, filters, zpts; rng, kws...)
+        results[i] = egg(sf[1, i], sf[2, i], true, filters, zpts; rng, cosmo, kws...)
     end
     Threads.@threads for i in 1:N_q
-        results[N_sf + i] = egg(q[1, i], q[2, i], false, filters, zpts; rng, kws...)
+        results[N_sf + i] = egg(q[1, i], q[2, i], false, filters, zpts; rng, cosmo, kws...)
     end
+    # sf_bools = Vector{Bool}(undef, N_sf + N_q)
+    # sf_bools[1:N_sf] .= true
+    # sf_bools[N_sf+1:end] .= false
+    # sfpq = hcat(sf, q) # 2 x (N_sf + N_q) array
+    # Threads.@threads for i in 1:(N_sf + N_q)
+    #     results[i] = egg(sfpq[1, i], sfpq[2, i], sf_bools[i], filters, zpts; rng, kws...)
+    # end
 
     return results
 end
