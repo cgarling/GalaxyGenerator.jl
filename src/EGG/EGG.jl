@@ -10,7 +10,7 @@ using ..GalaxyGenerator.IGM: IGMAttenuation, transmission, tau, Inoue2014
 using ..GalaxyGenerator.MassFunctions: RedshiftMassFunction, RedshiftMassFunctionSampler, MassFunctionSampler, BinnedRedshiftMassFunction, DoubleSchechterMassFunction, integrate
 
 using ArgCheck: @argcheck, @check
-using Cosmology: AbstractCosmology, distmod, Planck18
+using Cosmology: AbstractCosmology, angular_diameter_dist, distmod, Planck18
 using Distributions: LogNormal, Normal, Uniform, Poisson
 using DustExtinction: ExtinctionLaw, CCM89
 using FITSIO: FITS
@@ -22,6 +22,7 @@ using SpecialFunctions: erf
 using StaticArrays: SVector
 using Statistics: mean
 import Unitful as u
+import UnitfulAstro as ua
 
 export egg, generate_galaxies
 
@@ -245,11 +246,28 @@ function egg(Mstar, z, SF::Bool;
     R50_disk = isnothing(rng) ? R50_disk : rand(rng, LogNormal(log(R50_disk), 0.17 * logten))
     R50_bulge = exp10(0.56 * (logMstar - 11.25) + Fz_bulge) # kpc
     R50_bulge = isnothing(rng) ? R50_bulge : rand(rng, LogNormal(log(R50_bulge), 0.2 * logten))
-    α_R = 1 - 0.8 * log10(R50_disk / R50_bulge)
+    α_R = max(0.0, 1 - 0.8 * log10(R50_disk / R50_bulge))
     BT_α = BT^α_R
     R50_tot = R50_disk * (1 - BT_α) + R50_bulge * BT_α
     # Uniform position angle, shared between bulge and disk
     PA = isnothing(rng) ? 0.0 : rand(rng, Uniform(-180, 180))
+    # Bulge and disk axis ratios, b/a
+    # Bulges: calibration from n>2.5 galaxies and M* > 10.5
+    bulge_ratio = if isnothing(rng)
+        0.615
+    else
+        cdf = SVector(0.0, 0.0, 0.005641797168843602, 0.046194351364289135, 0.1283252410586063, 0.24369144498392944, 0.3792997332968612, 0.5338507830130617, 0.6942145934486769, 0.8460986117759693, 0.9627641386856322, 1.0)
+        x = SVector(0.0, 0.1, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.0)
+        interp_lin(cdf, x, rand(rng))
+    end
+    # Disks: calibration from n<1.5 galaxies and M* > 9.0
+    disk_ratio = if isnothing(rng)
+        0.523
+    else
+        cdf = SVector(0.0, 0.0, 0.011221453411250134, 0.09819668017065215, 0.2446850464274191, 0.4074498978238269, 0.5641917326927904, 0.7045136772666979, 0.8244720897716273, 0.9193346000788728, 0.9814290323737138, 1.0)
+        x = SVector(0.0, 0.1, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.0)
+        interp_lin(cdf, x, rand(rng))
+    end
 
     disk_SF = SF # Disks are SF if galaxy is SF
     bulge_SF = if ~SF # Bulge is quiescent if galaxy is quiescent
@@ -324,7 +342,7 @@ function egg(Mstar, z, SF::Bool;
     fpah = clamp(1 / (1 - (331 - 691 * ir8) / (193 - 6.98 * ir8)), 0.0, 1.0)
     lir = isfinite(lir) ? lir : 0.0
 
-    return (Mstar = Mstar, z = z, sfr = sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx, OH = oh)
+    return (Mstar = Mstar, z = z, sfr = sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, disk_ratio = disk_ratio, bulge_ratio = bulge_ratio, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx, OH = oh)
 end
 
 # This function is basically and intermediary between above function and below function.
@@ -368,6 +386,13 @@ function egg(
     Mstar, z = r.Mstar, r.z
     logMstar = log10(Mstar)
     dmod = distmod(cosmo, z) # Cosmological distance modulus at redshift z
+
+    # Compute sizes in arcsec from kpc in original result
+    propsize = u.ustrip(ua.kpc, angular_diameter_dist(cosmo, z)) # in kpc / radians
+    propsize = propsize * π / (180 * 3600) # in kpc / arcsec
+    R50_disk_arcsec = r.R50_disk / propsize
+    R50_bulge_arcsec = r.R50_bulge / propsize
+    R50_arcsec = r.R50 / propsize
 
     # Get optical SEDs; SEDs returned in units of erg/s/cm^2/Å at 10 pc per unit stellar mass
     m2l_cor = get_m2l_cor(z) # M/L correction in dex
@@ -468,7 +493,7 @@ function egg(
         mag_obs[i] = magnitude(fbar, zpts[i]) + dmod
     end
 
-    return merge(r, (vdisp = vdisp, Mgas = Mgas, MH2 = MH2, fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_obs = mag_obs, λ = λ, sed = sed))
+    return merge(r, (R50_arcsec = R50_arcsec, R50_bulge_arcsec = R50_bulge_arcsec, R50_disk_arcsec = R50_disk_arcsec, vdisp = vdisp, Mgas = Mgas, MH2 = MH2, fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_obs = mag_obs, λ = λ, sed = sed))
     # mag_obs = [-25//10 * log10(mean_flux_density(filters[i], λ, sed)) - zeropoint_mag(filters[i], mag_sys[i]) for i in eachindex(filters)]
     # function _itp(f::AbstractFilter, λ)
     #     wave = wavelength(f)
