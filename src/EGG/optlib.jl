@@ -24,7 +24,7 @@
 
 """
     lsun2Jy(lam, lum)
-Convert solar luminosities to Jansky at distance 10 pc. Used for normalizing SEDs from EGG.
+Convert solar luminosities to Jansky at distance 10 pc. Used for normalizing SEDs from EGG. `lam` are wavelengths in angstroms.
 """
 function lsun2Jy(lam, lum)
     d = 1e-5                   # 10 pc in Mpc, to place flux in absolute units
@@ -47,7 +47,7 @@ end
 
 """
     lsun2cgs(lam, lum)
-Convert solar luminosities to CGS flux units (erg/s/cm²/Å) at 10 pc. Used for normalizing SEDs from EGG.
+Convert solar luminosities to CGS flux units (erg/s/cm²/Å) at 10 pc. Used for normalizing SEDs from EGG. `lam` are wavelengths in angstroms.
 """
 lsun2cgs(lam, lum) = Jy2cgs(lam, lsun2Jy(lam, lum))
 

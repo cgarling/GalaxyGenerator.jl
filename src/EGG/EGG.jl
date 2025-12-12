@@ -717,33 +717,4 @@ function generate_galaxies(
     return results
 end
 
-# Function to convert solar luminosities to flux density in erg/s/cm^2/Hz
-"""
-    solar_luminosities_to_flux_density(L_solar, distance_cm)
-
-Converts a luminosity in solar units to a flux density in erg/s/cm²/Hz.
-
-# Arguments
-- `L_solar`: Luminosity in solar units (L_⊙).
-- `distance_cm`: Distance to the source in cm.
-
-# Returns
-- Flux density in erg/s/cm²/Hz.
-
-# Example
-```julia
-julia> solar_luminosities_to_flux_density(1.0, 3.086e24) # 1 L_⊙ at 1 Mpc
-3.631e-20
-```
-"""
-function solar_luminosities_to_flux_density(L_solar, distance_cm)
-    # Solar luminosity in erg/s
-    L_solar_erg = 3.828e33 * L_solar
-
-    # Flux density calculation
-    flux_density = L_solar_erg / (4 * π * distance_cm^2)
-
-    return flux_density
-end
-
 end # module
