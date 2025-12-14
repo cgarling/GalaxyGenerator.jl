@@ -383,6 +383,7 @@ function egg(
     )
 
     @argcheck length(filters) == length(zpts) # length(mag_sys)
+    @argcheck Av >= 0 "V-band extinction Av must be non-negative."
     Mstar, z = r.Mstar, r.z
     logMstar = log10(Mstar)
     dmod = distmod(cosmo, z) # Cosmological distance modulus at redshift z
@@ -466,30 +467,35 @@ function egg(
     opt_λ, opt_sed = merge_add(λ_bulge, λ_disk, sed_bulge, sed_disk)
     λ, sed = merge_add(opt_λ, ir_λ, opt_sed, ir_sed)
 
-    # Obtain rest-frame magnitudes
+    # Obtain rest-frame absolute magnitudes
     # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
-    # mag_abs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) for i in eachindex(filters)]
+    # mag_abs = [magnitude(filters[i], mag_sys[i], λ * u.angstrom, sed * u.erg / u.s / u.cm^2 / u.angstrom) for i in eachindex(filters)]
+    # mag_abs = [magnitude(mean_flux_density(filters[i], λ, sed), zpts[i]) for i in eachindex(filters)]
     mag_abs = Vector{Float32}(undef, length(filters))
     for i in eachindex(filters)
-        fbar = mean_flux_density(λ, sed, Float32.(filters[i].(λ)), detector_type(filters[i]))
+        # Sub-select λ that overlaps with filters[i]
+        good = (u.ustrip(u.angstrom, first(wavelength(filters[i]))) .<= λ) .& (λ .<= u.ustrip(u.angstrom, last(wavelength(filters[i]))))
+        λ_good = view(λ, good)
+        fbar = mean_flux_density(λ_good, view(sed, good), Float32.(filters[i].(λ_good)), detector_type(filters[i]))
         mag_abs[i] = magnitude(fbar, zpts[i])
     end
 
-    # Apply IGM absorption, MW dust absorption
+    # Apply IGM absorption, uses rest-frame wavelengths
     τ = tau.(igm, z, λ) # This is working, but expensive ~ 1 ms for full SED
-    # Add MW extinction optical depth; extinction_law(λ) returns A(λ) / Av, convert to τ
+    # Add MW extinction, requires observer-frame wavelengths
+    λ .*= 1 + z # Redshift wavelengths to observer frame
+    # extinction_law(λ) returns A(λ) / Av, convert to τ
     if Av != 0
         @. τ += extinction_law(λ) * Av / (2.5 * log10(ℯ)) # The constant is ~1.086
     end
     @. sed *= exp(-τ)
 
-    # Redshift SED, obtain observed magnitudes
-    λ .*= 1 + z
-    # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
-    # mag_obs = [magnitude(filters[i], mag_sys[i], λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) + dmod for i in eachindex(filters)]
+    # Measure observed magnitudes
     mag_obs = Vector{Float32}(undef, length(filters))
     for i in eachindex(filters)
-        fbar = mean_flux_density(λ, sed, Float32.(filters[i].(λ)), detector_type(filters[i]))
+        good = (u.ustrip(u.angstrom, first(wavelength(filters[i]))) .<= λ) .& (λ .<= u.ustrip(u.angstrom, last(wavelength(filters[i]))))
+        λ_good = view(λ, good)
+        fbar = mean_flux_density(λ_good, view(sed, good), Float32.(filters[i].(λ_good)), detector_type(filters[i]))
         mag_obs[i] = magnitude(fbar, zpts[i]) + dmod
     end
 
