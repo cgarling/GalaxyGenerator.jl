@@ -18,10 +18,17 @@ steradians(area_deg2) = area_deg2 * π * π / 180^2 # (π / 180)^2
 Fraction of the full sky covered by an area in square degrees. 
 HST/ACS field of view is (202 arcsec)² ≈ 0.003148 deg², which is
 
-```jldoctest
+```jldoctest fsky
 julia> using GalaxyGenerator: f_sky
 
 julia> isapprox(f_sky(202^2 / 3600^2), 7.632e-8, rtol=1e-5)
+true
+```
+
+The full sky is ~41,253 deg²,
+
+```jldoctest fsky
+julia> isapprox(f_sky(41253), 1.0; rtol=1e-3)
 true
 ```
 """
