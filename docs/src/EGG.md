@@ -35,7 +35,7 @@ ax1 = Axis(fig[1, 1],
     yscale = log10
 )
 for i in axes(z_ranges,1)
-    z = z_ranges[i,1]
+    z = (z_ranges[i,1] + z_ranges[i,2]) / 2
     Φ = [EGGMassFunction_SF(exp10(M), z) for M in logMstar]
     lines!(ax1, exp10.(logMstar), Φ, label = L"%$(z_ranges[i,1]) < z < %$(z_ranges[i,2])")
 end
@@ -50,7 +50,7 @@ ax2 = Axis(fig[1, 2],
     yticklabelsvisible = false  # Remove y-axis labels
 )
 for i in axes(z_ranges,1)
-    z = z_ranges[i,1]
+    z = (z_ranges[i,1] + z_ranges[i,2]) / 2
     Φ = [EGGMassFunction_Q(exp10(M), z) for M in logMstar]
     lines!(ax2, exp10.(logMstar), Φ, label = L"%$(z_ranges[i,1]) < z < %$(z_ranges[i,2])")
 end

@@ -378,6 +378,7 @@ function integrate(model::RedshiftMassFunction, cosmo::AbstractCosmology, mmin, 
 end
 function integrate(model::RedshiftMassFunction, cosmo::AbstractCosmology, mmin, mmax, z1, z2; kws...)
     @argcheck mmin < mmax "mmin must be less than mmax"
+    @argcheck z1 < z2 "z1 must be less than z2"
     # integrate over z: N = ∫_{z1}^{z2} φcum(z) * dV/dz * dz
     integrand(x) = begin
         logMstar, z = x
