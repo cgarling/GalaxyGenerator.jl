@@ -60,7 +60,7 @@ Apparently `opt_lib_fast_hd.fits` and `opt_lib_fast_hd_noigm.fits` do not...
 ```julia
 using GalaxyGenerator
 using FITSIO
-files = readdir(joinpath(splitdir(pathof(GalaxyGenerator))[1], "EGG", "data"); join=true)
+files = readdir(artifact"egg_default_data"; join=true)
 optlibs = filter(Base.Fix1(occursin, "opt_lib"), files)
 for file in optlibs
     FITS(file, "r") do f
@@ -105,7 +105,7 @@ struct OptLib
     buv::Vector{Float32}   # U-V bin definition, length(nbins) + 1
     bvj::Vector{Float32}   # V-J bin definition, length(nbins) + 1
 end
-function OptLib(fname::AbstractString=joinpath(@__DIR__, "data", "opt_lib_fast_noigm.fits"))
+function OptLib(fname::AbstractString=artifact"egg_default_data/opt_lib_fast_noigm.fits")
     FITS(fname, "r") do f
         hdu = f[2]
         lam = read(hdu, "LAM")[:,:,:,1]
@@ -203,7 +203,7 @@ struct CS17_IRLib <: IRLib
     l8_dust::Vector{Float32}
     l8_pah::Vector{Float32}
 end
-function CS17_IRLib(fname::AbstractString=joinpath(@__DIR__, "data", "ir_lib_cs17.fits"))
+function CS17_IRLib(fname::AbstractString=artifact"egg_default_data/ir_lib_cs17.fits")
     FITS(fname, "r") do f
         hdu = f[2]
         lam = read(hdu, "LAM")[:,:,1]
