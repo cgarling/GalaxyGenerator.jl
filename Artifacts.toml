@@ -1,0 +1,14 @@
+[egg_default_data]
+git-tree-sha1 = "51d2149070117682eee31bd0d9353ea81519f038"
+
+[[egg_default_data.download]]
+url = "https://github.com/cgarling/GalaxyGenerator.jl/releases/download/v0.0.0a/egg_default_data.tar.gz"
+sha256 = "3ed540c1ad0a2edd5e4b584eefb65b81310087a244718064014679c8cd90dd57"
+
+[[egg_default_data.files]]
+file = "ir_lib_cs17.fits"
+sha256 = "fdd1d934c20734187d98c8462fba67969b14c7e8036af82f21d7ae3bbf8f0098"
+
+[[egg_default_data.files]]
+file = "opt_lib_fast_noigm.fits"
+sha256 = "cd439d9c3f3c21a6b91861eb4b375c8fde21c7df17e380bf1274cef64fd84d4b"

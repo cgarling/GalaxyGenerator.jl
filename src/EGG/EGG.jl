@@ -17,6 +17,7 @@ using FITSIO: FITS
 using IrrationalConstants: logten
 import Logging
 using PhotometricFilters: AbstractFilter, magnitude, MagnitudeSystem, mean_flux_density, zeropoint_mag, detector_type, wavelength, throughput
+using Pkg.Artifacts: @artifact_str
 using Random: Random, default_rng, AbstractRNG
 using SpecialFunctions: erf
 using StaticArrays: SVector
