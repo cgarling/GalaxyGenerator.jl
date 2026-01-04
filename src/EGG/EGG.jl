@@ -94,9 +94,9 @@ julia> using GalaxyGenerator.EGG: get_mass_limit
 
 julia> using PhotometricFilters: HST_ACS_WFC_F606W, Vega
 
-julia> result = get_mass_limit(2.0, true, 25.0, HST_ACS_WFC_F606W(), Vega());
+julia> result = get_mass_limit(2.0, true, 26.0, HST_ACS_WFC_F606W(), Vega());
 
-julia> isapprox(result, 1.1456e12; rtol=1e-2)
+julia> isapprox(result, 1.077217e8; rtol=1e-2)
 true
 ```
 """
