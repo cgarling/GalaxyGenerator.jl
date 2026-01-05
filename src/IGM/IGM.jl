@@ -215,6 +215,16 @@ function tau(model::Inoue2014IGM, z::Real, λ_r::Real)
         tLCLAF(z, lobs) +
         tLCDLA(z, lobs)
     return τ
+    # τ = if λ_r > 1215.67
+    #     0.0
+    # else
+    #     lobs = λ_r * (1 + z)
+    #     tLSLAF(z, lobs, model.lam, model.ALAF) +
+    #     tLSDLA(z, lobs, model.lam, model.ADLA) +
+    #     tLCLAF(z, lobs) +
+    #     tLCDLA(z, lobs)
+    # end
+    # return τ
 end
 
 #########################
