@@ -108,6 +108,7 @@ function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, zpt;
     igm::IGMAttenuation=Inoue2014)
     # Generate Mstar - flux relation
     m2l_cor = get_m2l_cor(z) # M/L correction in dex
+    dmod = distmod(cosmo, z)
     # zpt = zeropoint_mag(filt, mag_sys)
 
     mags = Vector{Float64}(undef, length(Mstar))
@@ -120,9 +121,9 @@ function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, zpt;
         # Add IGM attenuation; this takes most of the runtime
         @. sed *= transmission(igm, z, λ)
         λ .*= 1 + z # Redshift wavelengths
-        # mags[i] = magnitude(filt, mag_sys, λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) + distmod(cosmo, z)
+        # mags[i] = magnitude(filt, mag_sys, λ * u.μm, sed * u.erg / u.s / u.cm^2 / u.angstrom) + dmod
         fbar = mean_flux_density(λ, sed, filt.(λ), detector_type(filt))
-        mags[i] = magnitude(fbar, zpt) + distmod(cosmo, z)
+        mags[i] = magnitude(fbar, zpt) + dmod
     end
     
     min_mag, max_mag = extrema(mags)
