@@ -151,9 +151,10 @@ Version of `PhotometricFilters.mean_flux_density` that pre-filters `λ` and `sed
 """
 function compute_flux(filt, λ, sed)
     @argcheck length(λ) == length(sed) "λ and sed must have the same length"
+    T = promote_type(eltype(λ), eltype(sed)) # Only promote up to λ, sed precision
     good = (u.ustrip(u.angstrom, first(wavelength(filt))) .<= λ) .& (λ .<= u.ustrip(u.angstrom, last(wavelength(filt))))
     λ_good = view(λ, good)
-    return mean_flux_density(λ_good, view(sed, good), filt.(λ_good), detector_type(filt))
+    return mean_flux_density(λ_good, view(sed, good), T.(filt.(λ_good)), detector_type(filt))
 end
 
 """
@@ -491,11 +492,19 @@ function egg(
     # Add emission lines
     # Merge optical and IR SEDs
     # In EGG, bulge flux is computed without IR component (no dust)
-    opt_λ, opt_sed = merge_add(λ_bulge, λ_disk, sed_bulge, sed_disk)
-    λ, sed = merge_add(opt_λ, ir_λ, opt_sed, ir_sed)
+    # opt_λ, opt_sed = merge_add(λ_bulge, λ_disk, sed_bulge, sed_disk)
+    # λ, sed = merge_add(opt_λ, ir_λ, opt_sed, ir_sed)
 
     # Obtain rest-frame absolute magnitudes
-    mag_abs = compute_magnitude.(filters, zpts, Ref(λ), Ref(sed))
+    # mag_abs = compute_magnitude.(filters, zpts, Ref(λ), Ref(sed))
+
+    flux_bulge = compute_flux.(filters, Ref(λ_bulge), Ref(sed_bulge))
+    mag_abs_bulge = magnitude.(flux_bulge, zpts)
+    λ_disk, sed_disk = merge_add(λ_disk, ir_λ, sed_disk, ir_sed)
+    flux_disk = compute_flux.(filters, Ref(λ_disk), Ref(sed_disk))
+    mag_abs_disk = magnitude.(flux_disk, zpts)
+    mag_abs = magnitude.(flux_bulge .+ flux_disk, zpts)
+    λ, sed = merge_add(λ_disk, λ_bulge, sed_disk, sed_bulge)
 
     # Apply IGM absorption, uses rest-frame wavelengths
     τ = tau.(igm, z, λ) # This is working, but expensive ~ 1 ms for full SED
@@ -506,6 +515,7 @@ function egg(
         @. τ += extinction_law(λ) * Av / (2.5 * log10(ℯ)) # The constant is ~1.086
     end
     @. sed *= exp(-τ)
+
 
     # Measure observed magnitudes
     mag_obs = compute_magnitude.(filters, zpts, Ref(λ), Ref(sed); dmod=dmod)
