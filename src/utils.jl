@@ -283,6 +283,58 @@ function merge_add(x1::AbstractVector{T1}, x2::AbstractVector{T2},
     return xout, yout
 end
 
+"""
+    sorted_common(λ1, λ2)
+Given sorted arrays `λ1` and `λ2`, returns two arrays of indices `common1` and `common2` such that `λ1[common1] == λ2[common2]`. The output index arrays are also sorted.
+"""
+function sorted_common(λ1, λ2)
+    if λ1 == λ2
+        return eachindex(λ1), eachindex(λ2)
+    end
+    common1 = Int64[]
+    sizehint!(common1, min(length(λ1), length(λ2)))
+    common2 = Int64[]
+    sizehint!(common2, min(length(λ1), length(λ2)))
+    for i in eachindex(λ1)
+        idx = length(common2) == 0 ? searchsortedfirst(λ2, λ1[i]) : common2[end]
+        for j in idx:lastindex(λ2)
+            if λ1[i] == λ2[j]
+                push!(common1, i)
+                push!(common2, j)
+            elseif λ2[j] > λ1[i]
+                break
+            end
+        end
+    end
+    return common1, common2
+end
+
+"""
+    sorted_setdiff(λ1, λ2)
+Given sorted arrays `λ1` and `λ2`, returns an array of indices `only1` such that `λ1[only1]` are the elements in `λ1` that are not in `λ2`. The output index array is also sorted.
+"""
+function sorted_setdiff(λ1, λ2)
+    only1 = Int64[]
+    sizehint!(only1, length(λ1))
+    for i in eachindex(λ1)
+        # idx = length(only1) == 0 ? searchsortedfirst(λ2, λ1[i]) : only1[end]
+        idx = searchsortedfirst(λ2, λ1[i])
+        found = false
+        for j in idx:lastindex(λ2)
+            if λ1[i] == λ2[j]
+                found = true
+                break
+            elseif λ1[i] < λ2[j]
+                break
+            end
+        end
+        if !found
+            push!(only1, i)
+        end
+    end
+    return only1
+end
+
 # """
 #     magnitude_fast(f::AbstractFilter, T::MagnitudeSystem, wavelengths, flux)
 # A fast version of `PhotometricFilters.magnitude` that assumes `wavelengths` and `flux` are already in the correct units () and that the `flux` vector is sampled at the same wavelengths as `wavelengths(filter)`. *No checks are performed to verify this* so use with caution.

@@ -5,7 +5,7 @@ Contains code to generate galaxy catalogs using methods similar to those used in
 """
 module EGG
 
-using ..GalaxyGenerator: interp_lin, interp_log, merge_add, find_bin, f_sky
+using ..GalaxyGenerator: interp_lin, interp_log, merge_add, find_bin, f_sky, sorted_common, sorted_setdiff
 using ..GalaxyGenerator.IGM: IGMAttenuation, transmission, tau, Inoue2014
 using ..GalaxyGenerator.MassFunctions: RedshiftMassFunction, RedshiftMassFunctionSampler, MassFunctionSampler, BinnedRedshiftMassFunction, DoubleSchechterMassFunction, integrate
 
@@ -490,43 +490,57 @@ function egg(
 
     #####################
     # Add emission lines
-    # Merge optical and IR SEDs
-    # In EGG, bulge flux is computed without IR component (no dust)
-    # opt_λ, opt_sed = merge_add(λ_bulge, λ_disk, sed_bulge, sed_disk)
-    # λ, sed = merge_add(opt_λ, ir_λ, opt_sed, ir_sed)
 
     # Obtain rest-frame absolute magnitudes
-    # mag_abs = compute_magnitude.(filters, zpts, Ref(λ), Ref(sed))
-
+    # In EGG, bulge flux is computed without IR component (no dust)
     flux_bulge = compute_flux.(filters, Ref(λ_bulge), Ref(sed_bulge))
     mag_abs_bulge = magnitude.(flux_bulge, zpts)
     λ_disk, sed_disk = merge_add(λ_disk, ir_λ, sed_disk, ir_sed)
     flux_disk = compute_flux.(filters, Ref(λ_disk), Ref(sed_disk))
     mag_abs_disk = magnitude.(flux_disk, zpts)
     mag_abs = magnitude.(flux_bulge .+ flux_disk, zpts)
-    λ, sed = merge_add(λ_disk, λ_bulge, sed_disk, sed_bulge)
 
-    # Apply IGM absorption, uses rest-frame wavelengths
-    τ = tau.(igm, z, λ) # This is working, but expensive ~ 1 ms for full SED
-    # Add MW extinction, requires observer-frame wavelengths
-    λ .*= 1 + z # Redshift wavelengths to observer frame
-    # extinction_law(λ) returns A(λ) / Av, convert to τ
-    if Av != 0
-        @. τ += extinction_law(λ) * Av / (2.5 * log10(ℯ)) # The constant is ~1.086
+    function compute_igm_tau(λ_disk, λ_bulge, z, igm)
+        # Compute tau for rest-frame disk wavelengths
+        τ_disk = tau.(igm, z, λ_disk)
+
+        # Identify overlapping wavelengths between disk and bulge
+        common_disk, common_bulge = sorted_common(λ_disk, λ_bulge)
+        τ_bulge = Vector{Float64}(undef, length(λ_bulge))
+        τ_bulge[common_bulge] .= τ_disk[common_disk]
+
+        # Compute bulge elements that are not in disk
+        unique_bulge = sorted_setdiff(1:length(λ_bulge), common_bulge)
+        for i in unique_bulge
+            τ_bulge[i] = tau(igm, z, λ_bulge[i])
+        end
+
+        return τ_disk, τ_bulge
     end
-    @. sed *= exp(-τ)
 
+    τ_disk, τ_bulge = compute_igm_tau(λ_disk, λ_bulge, z, igm)
+    # Add MW extinction, requires observer-frame wavelengths
+    λ_disk .*= 1 + z # Redshift wavelengths to observer frame
+    λ_bulge .*= 1 + z # Redshift wavelengths to observer frame
+    if Av != 0
+        prefac = Av / (2.5 * log10(ℯ)) # The constant is ~1.086
+        @. τ_disk += extinction_law(λ_disk) * prefac
+        @. τ_bulge += extinction_law(λ_bulge) * prefac
+    end
+    @. sed_disk *= exp(-τ_disk)
+    @. sed_bulge *= exp(-τ_bulge)
 
     # Measure observed magnitudes
-    mag_obs = compute_magnitude.(filters, zpts, Ref(λ), Ref(sed); dmod=dmod)
+    flux_obs_disk = compute_flux.(filters, Ref(λ_disk), Ref(sed_disk))
+    mag_obs_disk = @. magnitude(flux_obs_disk, zpts) + dmod
+    flux_obs_bulge = compute_flux.(filters, Ref(λ_bulge), Ref(sed_bulge))
+    mag_obs_bulge = @. magnitude(flux_obs_bulge, zpts) + dmod
+    mag_obs = @. magnitude(flux_obs_disk + flux_obs_bulge, zpts) + dmod
 
-    return merge(r, (R50_arcsec = R50_arcsec, R50_bulge_arcsec = R50_bulge_arcsec, R50_disk_arcsec = R50_disk_arcsec, vdisp = vdisp, Mgas = Mgas, MH2 = MH2, fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_obs = mag_obs, λ = λ, sed = sed))
-    # mag_obs = [-25//10 * log10(mean_flux_density(filters[i], λ, sed)) - zeropoint_mag(filters[i], mag_sys[i]) for i in eachindex(filters)]
-    # function _itp(f::AbstractFilter, λ)
-    #     wave = wavelength(f)
-    #     λv = @view λ[searchsortedfirst(λ, first(wave)):searchsortedlast(λ, last(wave))]
+    # Make final λ and sed outputs
+    λ, sed = merge_add(λ_disk, λ_bulge, sed_disk, sed_bulge)
 
-    # mag_obs = [-25//10 * log10(mean_flux_density(λ, sed, [interp_lin(wavelength(filters[i]), throughput(filters[i]), j * u.angstrom) for j in λ], detector_type(filters[i]))) - zeropoint_mag(filters[i], mag_sys[i]) for i in eachindex(filters)]
+    return merge(r, (R50_arcsec = R50_arcsec, R50_bulge_arcsec = R50_bulge_arcsec, R50_disk_arcsec = R50_disk_arcsec, vdisp = vdisp, Mgas = Mgas, MH2 = MH2, fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_abs_disk = mag_abs_disk, mag_abs_bulge = mag_abs_bulge, mag_obs = mag_obs, mag_obs_disk = mag_obs_disk, mag_obs_bulge = mag_obs_bulge, λ = λ, sed = sed))
 
 end
 
