@@ -146,6 +146,21 @@ function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, zpt;
 end
 
 """
+    compute_magnitude(filt, zpt, λ, sed; dmod=0)
+More efficient version of `PhotometricFilters.magnitude` that uses a precomputed zeropoint `zpt`. `dmod` is distance modulus added to the magnitude."""
+function compute_magnitude(filt, zpt, λ, sed; dmod=0)
+    @argcheck length(λ) == length(sed) "λ and sed must have the same length"
+    T = promote_type(eltype(λ), eltype(sed)) # Only promote up to λ, sed precision
+    good = (u.ustrip(u.angstrom, first(wavelength(filt))) .<= λ) .& (λ .<= u.ustrip(u.angstrom, last(wavelength(filt))))
+    λ_good = view(λ, good)
+    fbar = mean_flux_density(λ_good, view(sed, good), filt.(λ_good), detector_type(filt))
+    return T(magnitude(fbar, zpt) + dmod)
+end
+# This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
+# mag_abs = [magnitude(filters[i], mag_sys[i], λ * u.angstrom, sed * u.erg / u.s / u.cm^2 / u.angstrom) for i in eachindex(filters)]
+# mag_abs = [magnitude(mean_flux_density(filters[i], λ, sed), zpts[i]) for i in eachindex(filters)]
+
+"""
     uv_vj(logMstar, z, SF::Bool)
 Takes `log10(Mstar [M⊙])`, redshift, and `SF::Bool` determining whether the stellar population is star-forming (`true`) or quiescent (`false`).
 
@@ -470,17 +485,7 @@ function egg(
     λ, sed = merge_add(opt_λ, ir_λ, opt_sed, ir_sed)
 
     # Obtain rest-frame absolute magnitudes
-    # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
-    # mag_abs = [magnitude(filters[i], mag_sys[i], λ * u.angstrom, sed * u.erg / u.s / u.cm^2 / u.angstrom) for i in eachindex(filters)]
-    # mag_abs = [magnitude(mean_flux_density(filters[i], λ, sed), zpts[i]) for i in eachindex(filters)]
-    mag_abs = Vector{Float32}(undef, length(filters))
-    for i in eachindex(filters)
-        # Sub-select λ that overlaps with filters[i]
-        good = (u.ustrip(u.angstrom, first(wavelength(filters[i]))) .<= λ) .& (λ .<= u.ustrip(u.angstrom, last(wavelength(filters[i]))))
-        λ_good = view(λ, good)
-        fbar = mean_flux_density(λ_good, view(sed, good), Float32.(filters[i].(λ_good)), detector_type(filters[i]))
-        mag_abs[i] = magnitude(fbar, zpts[i])
-    end
+    mag_abs = compute_magnitude.(filters, zpts, Ref(λ), Ref(sed))
 
     # Apply IGM absorption, uses rest-frame wavelengths
     τ = tau.(igm, z, λ) # This is working, but expensive ~ 1 ms for full SED
@@ -493,13 +498,7 @@ function egg(
     @. sed *= exp(-τ)
 
     # Measure observed magnitudes
-    mag_obs = Vector{Float32}(undef, length(filters))
-    for i in eachindex(filters)
-        good = (u.ustrip(u.angstrom, first(wavelength(filters[i]))) .<= λ) .& (λ .<= u.ustrip(u.angstrom, last(wavelength(filters[i]))))
-        λ_good = view(λ, good)
-        fbar = mean_flux_density(λ_good, view(sed, good), Float32.(filters[i].(λ_good)), detector_type(filters[i]))
-        mag_obs[i] = magnitude(fbar, zpts[i]) + dmod
-    end
+    mag_obs = compute_magnitude.(filters, zpts, Ref(λ), Ref(sed); dmod=dmod)
 
     return merge(r, (R50_arcsec = R50_arcsec, R50_bulge_arcsec = R50_bulge_arcsec, R50_disk_arcsec = R50_disk_arcsec, vdisp = vdisp, Mgas = Mgas, MH2 = MH2, fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_obs = mag_obs, λ = λ, sed = sed))
     # mag_obs = [-25//10 * log10(mean_flux_density(filters[i], λ, sed)) - zeropoint_mag(filters[i], mag_sys[i]) for i in eachindex(filters)]
