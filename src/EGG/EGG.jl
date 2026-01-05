@@ -146,14 +146,23 @@ function get_mass_limit(z, SF::Bool, mag_lim, filt::AbstractFilter, zpt;
 end
 
 """
+    compute_flux(filt, λ, sed)
+Version of `PhotometricFilters.mean_flux_density` that pre-filters `λ` and `sed` to only include wavelengths within the filter response range. This improves performance when the SED wavelength range is much larger than the filter response range.
+"""
+function compute_flux(filt, λ, sed)
+    @argcheck length(λ) == length(sed) "λ and sed must have the same length"
+    good = (u.ustrip(u.angstrom, first(wavelength(filt))) .<= λ) .& (λ .<= u.ustrip(u.angstrom, last(wavelength(filt))))
+    λ_good = view(λ, good)
+    return mean_flux_density(λ_good, view(sed, good), filt.(λ_good), detector_type(filt))
+end
+
+"""
     compute_magnitude(filt, zpt, λ, sed; dmod=0)
 More efficient version of `PhotometricFilters.magnitude` that uses a precomputed zeropoint `zpt`. `dmod` is distance modulus added to the magnitude."""
 function compute_magnitude(filt, zpt, λ, sed; dmod=0)
     @argcheck length(λ) == length(sed) "λ and sed must have the same length"
     T = promote_type(eltype(λ), eltype(sed)) # Only promote up to λ, sed precision
-    good = (u.ustrip(u.angstrom, first(wavelength(filt))) .<= λ) .& (λ .<= u.ustrip(u.angstrom, last(wavelength(filt))))
-    λ_good = view(λ, good)
-    fbar = mean_flux_density(λ_good, view(sed, good), filt.(λ_good), detector_type(filt))
+    fbar = compute_flux(filt, λ, sed)
     return T(magnitude(fbar, zpt) + dmod)
 end
 # This is inefficient as `magnitude` resamples the filter to the λ every time it's called; don't care for now
@@ -481,6 +490,7 @@ function egg(
     #####################
     # Add emission lines
     # Merge optical and IR SEDs
+    # In EGG, bulge flux is computed without IR component (no dust)
     opt_λ, opt_sed = merge_add(λ_bulge, λ_disk, sed_bulge, sed_disk)
     λ, sed = merge_add(opt_λ, ir_λ, opt_sed, ir_sed)
 
