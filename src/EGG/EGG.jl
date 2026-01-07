@@ -761,7 +761,6 @@ end
 ## Convenience functions to unpack magnitudes from result NamedTuple
 function unpack_mags(r::NamedTuple, key::Symbol, filternames::NTuple{N,Symbol}) where N
     mags = getfield(r, key)
-    # return NamedTuple{filternames, NTuple{N, eltype(mags)}}(Tuple(mags))
     return unpack_mags(mags, filternames)
 end
 function unpack_mags(mags, filternames::NTuple{N,Symbol}) where N
@@ -780,10 +779,10 @@ end
 
 # short names for the different magnitude systems to append to filter names
 name(::AB) = "AB"
-name(::Vega) = "Vega"
+name(::Vega) = "VEGA"
 name(::ST) = "ST"
-_fix_mag_keys(mag_keys::NTuple{N,Symbol}) where N = mag_keys
-_fix_mag_keys(mag_keys) = Tuple(Symbol(i) for i in mag_keys)
+# _fix_mag_keys(mag_keys::NTuple{N,Symbol}) where N = mag_keys
+# _fix_mag_keys(mag_keys) = Tuple(Symbol(i) for i in mag_keys)
 function unpack_mags(table::Vector{<:NamedTuple}, filternames, mag_sys; mag_keys=(:mag_obs, :mag_obs_disk, :mag_obs_bulge, :mag_abs, :mag_abs_disk, :mag_abs_bulge))
     @assert length(filternames) == length(mag_sys)
     expanded_filternames = [Tuple(Symbol(string(mk, "_", fn, "_", name(ms))) for (fn, ms) in zip(filternames, mag_sys)) for mk in mag_keys]
