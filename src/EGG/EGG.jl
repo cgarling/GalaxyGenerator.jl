@@ -16,7 +16,7 @@ using DustExtinction: ExtinctionLaw, CCM89
 using FITSIO: FITS
 using IrrationalConstants: logten
 import Logging
-using PhotometricFilters: AbstractFilter, magnitude, MagnitudeSystem, mean_flux_density, zeropoint_mag, detector_type, wavelength, throughput
+using PhotometricFilters: AbstractFilter, magnitude, MagnitudeSystem, mean_flux_density, zeropoint_mag, detector_type, wavelength, throughput, AB, ST, Vega
 using Pkg.Artifacts: @artifact_str
 using Random: Random, default_rng, AbstractRNG
 using SpecialFunctions: erf
@@ -756,6 +756,40 @@ function generate_galaxies(
     end
 
     return results
+end
+
+## Convenience functions to unpack magnitudes from result NamedTuple
+function unpack_mags(r::NamedTuple, key::Symbol, filternames::NTuple{N,Symbol}) where N
+    mags = getfield(r, key)
+    # return NamedTuple{filternames, NTuple{N, eltype(mags)}}(Tuple(mags))
+    return unpack_mags(mags, filternames)
+end
+function unpack_mags(mags, filternames::NTuple{N,Symbol}) where N
+    return NamedTuple{filternames, NTuple{N, eltype(mags)}}(NTuple{N}(mags))
+end
+# function unpack_mags(r::NamedTuple, filternames::NTuple{N,Symbol}, mag_sys, mag_keys::NTuple{M,Symbol}) where {N, M}
+# end
+function remove_key(nt::NamedTuple, k::Symbol)
+    goodkeys = filter(!=(k), keys(nt))
+    return NamedTuple{goodkeys}(getfield.(Ref(nt), goodkeys))
+end
+function remove_keys(nt::NamedTuple, ks)
+    goodkeys = filter(x -> !(x in ks), keys(nt))
+    return NamedTuple{goodkeys}(getfield.(Ref(nt), goodkeys))
+end
+
+# short names for the different magnitude systems to append to filter names
+name(::AB) = "AB"
+name(::Vega) = "Vega"
+name(::ST) = "ST"
+_fix_mag_keys(mag_keys::NTuple{N,Symbol}) where N = mag_keys
+_fix_mag_keys(mag_keys) = Tuple(Symbol(i) for i in mag_keys)
+function unpack_mags(table::Vector{<:NamedTuple}, filternames, mag_sys; mag_keys=(:mag_obs, :mag_obs_disk, :mag_obs_bulge, :mag_abs, :mag_abs_disk, :mag_abs_bulge))
+    @assert length(filternames) == length(mag_sys)
+    expanded_filternames = [Tuple(Symbol(string(mk, "_", fn, "_", name(ms))) for (fn, ms) in zip(filternames, mag_sys)) for mk in mag_keys]
+    # mag_keys = _fix_mag_keys(mag_keys)
+    # mags = [merge((unpack_mags(r, key, fnames) for (key, fnames)=zip(mag_keys, expanded_filternames))...) for r=table]
+    return [merge(remove_keys(r, mag_keys), merge((unpack_mags(r, key, fnames) for (key, fnames)=zip(mag_keys, expanded_filternames))...)) for r=table]
 end
 
 end # module
