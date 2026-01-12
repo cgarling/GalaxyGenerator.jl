@@ -335,6 +335,25 @@ function sorted_setdiff(λ1, λ2)
     return only1
 end
 
+"""
+    random_point_at_radius(coord::SkyCoords.AbstractSkyCoords, r, rng::AbstractRNG=default_rng())
+Generates a random point at an angular distance `r` (in radians) from the input sky coordinate `coord`.
+"""
+function random_point_at_radius(coord::SkyCoords.AbstractSkyCoords, r, rng::AbstractRNG=default_rng())
+    θ = 2π * rand(rng)
+    return SkyCoords.offset(coord, r, θ)
+end
+
+"""
+    random_point_in_radius(coord::SkyCoords.AbstractSkyCoords, r, rng::AbstractRNG=default_rng())
+Generates a random point within an angular radius `r` (in radians) from the input sky coordinate `coord`.
+"""
+function random_point_in_radius(coord::SkyCoords.AbstractSkyCoords, r, rng::AbstractRNG=default_rng())
+    u = rand(rng)
+    dist = acos(1 - (1 - cos(r)) * u) # uniform in solid angle
+    return random_point_at_radius(coord, dist, rng)
+end 
+
 # """
 #     magnitude_fast(f::AbstractFilter, T::MagnitudeSystem, wavelengths, flux)
 # A fast version of `PhotometricFilters.magnitude` that assumes `wavelengths` and `flux` are already in the correct units () and that the `flux` vector is sampled at the same wavelengths as `wavelengths(filter)`. *No checks are performed to verify this* so use with caution.

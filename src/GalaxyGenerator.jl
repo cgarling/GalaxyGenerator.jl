@@ -1,6 +1,8 @@
 module GalaxyGenerator
 
 using ArgCheck: @argcheck, @check
+using Random: Random, default_rng, AbstractRNG
+import SkyCoords
 
 export SchechterMassFunction, DoubleSchechterMassFunction, MassFunctionSampler, generate_galaxies, egg
 
