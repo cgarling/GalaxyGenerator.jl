@@ -357,8 +357,8 @@ function integrate(model::ConstantMassFunction, cosmo::AbstractCosmology, mmin, 
     @argcheck mmin < mmax "mmin must be less than mmax"
     # Integrate the mass function over stellar masses
     mass_integral = integrate(model, mmin, mmax; kws...)
-    # Convert volume to Mpc³ without units
-    volume = ustrip(Mpc^3, comoving_volume(cosmo, z))
+    # Convert volume to Mpc³ without units, per steradian
+    volume = ustrip(Mpc^3, comoving_volume(cosmo, z)) / (4 * π)
     return mass_integral * volume
 end
 function integrate(model::ConstantMassFunction, cosmo::AbstractCosmology, mmin, mmax, z1, z2; kws...)
@@ -366,9 +366,9 @@ function integrate(model::ConstantMassFunction, cosmo::AbstractCosmology, mmin, 
     @argcheck z1 < z2 "z1 must be less than z2"
     # Integrate the mass function over stellar masses
     mass_integral = integrate(model, mmin, mmax; kws...)
-    # Compute the comoving volume between z1 and z2
+    # Compute the comoving volume between z1 and z2, per steradian
     volume = comoving_volume(cosmo, z2) - comoving_volume(cosmo, z1)
-    volume = ustrip(Mpc^3, volume) # Convert volume to Mpc³ without units
+    volume = ustrip(Mpc^3, volume) / (4 * π) # Convert volume to Mpc³ per steradian without units
     return mass_integral * volume
 end
 
