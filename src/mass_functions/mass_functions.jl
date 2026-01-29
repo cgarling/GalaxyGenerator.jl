@@ -86,9 +86,11 @@ true
 """
 function MassFunctionSampler(model::ConstantMassFunction, mmin, mmax; npoints::Int=1000)
     x = logrange(mmin, mmax, npoints)
-    cdf = model.(x)
-    cumsum!(@view(cdf[2:end]), @views (cdf[2:end] .+ cdf[1:end-1]) ./ 2 .* diff(log10.(x)))
+    f = model.(x)
+    trap_areas = @views (f[2:end] .+ f[1:end-1]) ./ 2 .* diff(log10.(x))
+    cdf = similar(f)
     cdf[1] = 0
+    cumsum!(@view(cdf[2:end]), trap_areas)
     cdf ./= last(cdf)
     T = typeof(first(cdf))
     return ConstantMassFunctionSampler{T, typeof(x), typeof(cdf), typeof(model)}(x, cdf, model)
