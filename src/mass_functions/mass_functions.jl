@@ -331,7 +331,7 @@ Numerically integrates the provided stellar mass function `model` between stella
 - `kws...`: Keyword arguments `kws...` are passed to `QuadGK.quadgk` (for `model::ConstantMassFunction`) or `HCubature.hcubature` (for `model::RedshiftMassFunction`) to perform the numerical integration. These methods have default tolerances that are very tight `e.g., sqrt(eps)`, so loosening these tolerances (e.g., by setting relative tolerance `rtol=1e-4`)can significantly speed up the integration at the cost of some accuracy.
 
 # Returns
-The expectation value for the number of galaxies in the specified mass and redshift ranges.
+The expectation value for the number of galaxies **per steradian** in the specified mass and redshift ranges. To get the number of galaxies in a survey area, multiply by the area in steradians: `integrate(...) * steradians(area_deg2)`.
 
 # Examples
 ```jldoctest integrate
