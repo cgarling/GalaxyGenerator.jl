@@ -576,9 +576,9 @@ function generate_galaxies(
 
     @argcheck 0 < area_deg2 < 4π * (180/π)^2 "Area in deg² must be between 0 and the full sky (~41253 deg²)."
     # Retrieve mass and redshift limits from samplers
-    mmin_sf, mmax_sf = sf_sampler.mass_grid[1], sf_sampler.mass_grid[end]
+    mmin_sf, mmax_sf = minimum(sf_sampler.mass_grid), maximum(sf_sampler.mass_grid)
     zmin_sf, zmax_sf = sf_sampler.redshift_grid[1], sf_sampler.redshift_grid[end]
-    mmin_q, mmax_q = q_sampler.mass_grid[1], q_sampler.mass_grid[end]
+    mmin_q, mmax_q = minimum(q_sampler.mass_grid), maximum(q_sampler.mass_grid)
     zmin_q, zmax_q = q_sampler.redshift_grid[1], q_sampler.redshift_grid[end]
 
     # Calculate expected number of galaxies with masses between mmin and mmax and redshifts between zmin and zmax
@@ -713,9 +713,9 @@ function generate_galaxies(
 
     @argcheck 0 < area_deg2 < 4π * (180/π)^2 "Area in deg² must be between 0 and the full sky (~41253 deg²)."
     # Retrieve mass and redshift limits from samplers
-    mmin_sf, mmax_sf = sf_sampler.mass_grid[1], sf_sampler.mass_grid[end]
+    mmin_sf, mmax_sf = minimum(sf_sampler.mass_grid), maximum(sf_sampler.mass_grid)
     zmin_sf, zmax_sf = sf_sampler.redshift_grid[1], sf_sampler.redshift_grid[end]
-    mmin_q, mmax_q = q_sampler.mass_grid[1], q_sampler.mass_grid[end]
+    mmin_q, mmax_q = minimum(q_sampler.mass_grid), maximum(q_sampler.mass_grid)
     zmin_q, zmax_q = q_sampler.redshift_grid[1], q_sampler.redshift_grid[end]
 
     # Calculate expected number of galaxies with masses between mmin and mmax and redshifts between zmin and zmax
