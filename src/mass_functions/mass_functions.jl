@@ -86,9 +86,13 @@ true
 """
 function MassFunctionSampler(model::ConstantMassFunction, mmin, mmax; npoints::Int=1000)
     x = logrange(mmin, mmax, npoints)
-    cdf = model.(x)
-    cumsum!(@view(cdf[2:end]), @views (cdf[2:end] .+ cdf[1:end-1]) ./ 2 .* diff(log10.(x)))
+    f = model.(x)
+    # Compute trapezoidal integration: ∫ f(log10(M)) d(log10(M))
+    # First compute the trapezoid areas, then cumsum
+    trap_areas = @views (f[2:end] .+ f[1:end-1]) ./ 2 .* diff(log10.(x))
+    cdf = similar(f)
     cdf[1] = 0
+    cumsum!(@view(cdf[2:end]), trap_areas)
     cdf ./= last(cdf)
     T = typeof(first(cdf))
     return ConstantMassFunctionSampler{T, typeof(x), typeof(cdf), typeof(model)}(x, cdf, model)
@@ -248,17 +252,17 @@ function MassFunctionSampler(model::RedshiftMassFunction, cosmo::AbstractCosmolo
     cdf[1,:] .= 0
 
     # To sample redshift, we need to sum over the mass axis
+    # cdf[i,j] already contains integrated galaxy counts, so we just need cumsum
     z_cdf = vec(sum(cdf, dims=1))
-    cumsum!(@view(z_cdf[2:end]), @views (z_cdf[2:end] .+ z_cdf[1:end-1]) ./ 2 .* diff(redshift_grid))
-    z_cdf[1] = 0
+    cumsum!(z_cdf, z_cdf)
     z_cdf ./= last(z_cdf)
 
     # Once we sample redshift, we need to calculate CDF of every column
+    # cdf[:,i] already contains integrated galaxy counts in each mass bin,
+    # so we just need cumsum (not trapezoidal integration)
     for i in axes(cdf, 2)
         col = @view cdf[:, i]
-        dlog_mass = diff(log10.(view(mass_grid, :, i))) # Integrate in log10 space (mass functions are in N / Mpc^3 / dex)
-        cumsum!(@view(col[2:end]), @views (col[2:end] .+ col[1:end-1]) ./ 2 .* dlog_mass)
-        col[1] = 0
+        cumsum!(col, col)
         col ./= last(col)
     end
 
