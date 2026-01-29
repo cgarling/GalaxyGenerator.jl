@@ -251,16 +251,13 @@ function MassFunctionSampler(model::RedshiftMassFunction, cosmo::AbstractCosmolo
 
     # To sample redshift, we need to sum over the mass axis
     z_cdf = vec(sum(cdf, dims=1))
-    cumsum!(@view(z_cdf[2:end]), @views (z_cdf[2:end] .+ z_cdf[1:end-1]) ./ 2 .* diff(redshift_grid))
-    z_cdf[1] = 0
+    cumsum!(z_cdf, z_cdf)
     z_cdf ./= last(z_cdf)
 
     # Once we sample redshift, we need to calculate CDF of every column
-    for i in axes(cdf, 2)
+    for i in axes(cdf, 2)[2:end] # skip first column, all zeros by definition
         col = @view cdf[:, i]
-        dlog_mass = diff(log10.(view(mass_grid, :, i))) # Integrate in log10 space (mass functions are in N / Mpc^3 / dex)
-        cumsum!(@view(col[2:end]), @views (col[2:end] .+ col[1:end-1]) ./ 2 .* dlog_mass)
-        col[1] = 0
+        cumsum!(col, col)
         col ./= last(col)
     end
 
