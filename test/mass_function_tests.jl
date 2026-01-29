@@ -2,7 +2,6 @@ using Cosmology: Planck18, comoving_volume_element
 using GalaxyGenerator.MassFunctions: RedshiftMassFunction, SchechterMassFunction, integrate, MassFunctionSampler
 using QuadGK: quadgk
 using Random: Random
-using Statistics: mean, std
 using Test
 using Unitful: ustrip
 using UnitfulAstro: Mpc
@@ -74,9 +73,17 @@ end
         bin_counts = zeros(n_bins)
         for sample in samples
             for i in 1:n_bins
-                if bin_edges[i] <= sample < bin_edges[i+1]
-                    bin_counts[i] += 1
-                    break
+                if i == n_bins
+                    # Last bin includes upper boundary
+                    if bin_edges[i] <= sample <= bin_edges[i+1]
+                        bin_counts[i] += 1
+                        break
+                    end
+                else
+                    if bin_edges[i] <= sample < bin_edges[i+1]
+                        bin_counts[i] += 1
+                        break
+                    end
                 end
             end
         end

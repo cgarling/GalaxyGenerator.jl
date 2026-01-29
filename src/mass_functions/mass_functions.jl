@@ -39,8 +39,8 @@ abstract type ConstantMassFunction{T} <: AbstractMassFunction{T} end
 Random.rand(rng::Random.AbstractRNG, s::ConstantMassFunction) = error("Random sampling of `ConstantMassFunction` subtypes requires instantiating a `MassFunctionSampler` from your stellar mass model.")
 
 struct ConstantMassFunctionSampler{T, A <: AbstractVector{T}, B <: AbstractVector, C <: ConstantMassFunction} <: ConstantMassFunction{T}
-    x::A  # CDF values
-    y::B  # stellar masses corresponding to CDF values
+    x::A  # Stellar mass grid
+    y::B  # CDF values corresponding to stellar masses
     model::C # The mass function model
 end
 
