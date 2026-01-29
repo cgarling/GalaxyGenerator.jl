@@ -387,8 +387,8 @@ function integrate(model::RedshiftMassFunction, cosmo::AbstractCosmology, mmin, 
     total = hcubature(integrand, (log10(mmin), z1), (log10(mmax), z2); kws...)[1]
     # total = Cubature.hcubature(integrand, (log10(mmin), z1), (log10(mmax), z2); kws...)[1] # Little slower than HCubature.hcubature
     # total = Cubature.pcubature(integrand, (log10(mmin), z1), (log10(mmax), z2); kws...)[1] # 20x slower than hcubature
-    # Comoving volume element is per steradian, so multiply by 4π to get full sky
-   return total * 4 * π
+    # Comoving volume element is per steradian, return galaxies per steradian
+   return total
 end
 
 

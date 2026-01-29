@@ -5,7 +5,7 @@ Contains code to generate galaxy catalogs using methods similar to those used in
 """
 module EGG
 
-using ..GalaxyGenerator: interp_lin, interp_log, merge_add, find_bin, f_sky, sorted_common, sorted_setdiff
+using ..GalaxyGenerator: interp_lin, interp_log, merge_add, find_bin, f_sky, steradians, sorted_common, sorted_setdiff
 using ..GalaxyGenerator.IGM: IGMAttenuation, transmission, tau, Inoue2014
 using ..GalaxyGenerator.MassFunctions: RedshiftMassFunction, RedshiftMassFunctionSampler, MassFunctionSampler, BinnedRedshiftMassFunction, DoubleSchechterMassFunction, integrate
 
@@ -582,8 +582,8 @@ function generate_galaxies(
     zmin_q, zmax_q = q_sampler.redshift_grid[1], q_sampler.redshift_grid[end]
 
     # Calculate expected number of galaxies with masses between mmin and mmax and redshifts between zmin and zmax
-    N_sf = integrate(sf_sampler, cosmo, mmin_sf, mmax_sf, zmin_sf, zmax_sf) * f_sky(area_deg2)
-    N_q = integrate(q_sampler, cosmo, mmin_q, mmax_q, zmin_q, zmax_q) * f_sky(area_deg2)
+    N_sf = integrate(sf_sampler, cosmo, mmin_sf, mmax_sf, zmin_sf, zmax_sf) * steradians(area_deg2)
+    N_q = integrate(q_sampler, cosmo, mmin_q, mmax_q, zmin_q, zmax_q) * steradians(area_deg2)
 
     # Poisson sample, if requested
     N_sf = poisson ? rand(rng, Poisson(N_sf)) : round(Int, N_sf)
@@ -723,8 +723,8 @@ function generate_galaxies(
     # due to a pre-imposed magnitude limit (see mag_lim above). So the right way to do this is to integrate over the 
     # stellar masses at each redshift defined in the sampler.mass_grid...if the grid is the same for every redshift,
     # then this doesn't matter and the below is correct. Ignoring for now.
-    N_sf = integrate(sf_sampler, cosmo, mmin_sf, mmax_sf, zmin_sf, zmax_sf) * f_sky(area_deg2)
-    N_q = integrate(q_sampler, cosmo, mmin_q, mmax_q, zmin_q, zmax_q) * f_sky(area_deg2)
+    N_sf = integrate(sf_sampler, cosmo, mmin_sf, mmax_sf, zmin_sf, zmax_sf) * steradians(area_deg2)
+    N_q = integrate(q_sampler, cosmo, mmin_q, mmax_q, zmin_q, zmax_q) * steradians(area_deg2)
 
     # Poisson sample, if requested
     N_sf = poisson ? rand(rng, Poisson(N_sf)) : round(Int, N_sf)
