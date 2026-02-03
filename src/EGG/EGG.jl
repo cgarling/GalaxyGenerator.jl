@@ -369,7 +369,10 @@ function egg(Mstar, z, SF::Bool;
     fpah = clamp(1 / (1 - (331 - 691 * ir8) / (193 - 6.98 * ir8)), 0.0, 1.0)
     lir = isfinite(lir) ? lir : 0.0
 
-    return (Mstar = Mstar, z = z, sfr = sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, disk_ratio = disk_ratio, bulge_ratio = bulge_ratio, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx, OH = oh)
+    # Velocity dispersion, Stott+16
+    vdisp = exp10(0.12 * (logMstar - 10) + 1.78)
+
+    return (Mstar = Mstar, z = z, sfr = sfr, sfr_ir = sfr_ir, sfr_uv = sfr_uv, uv_disk = uv_disk, vj_disk = vj_disk, uv_bulge = uv_bulge, vj_bulge = vj_bulge, R50_disk = R50_disk, R50_bulge = R50_bulge, R50 = R50_tot, disk_ratio = disk_ratio, bulge_ratio = bulge_ratio, PA = PA, BT = BT, Mdisk = Mdisk, Mbulge = Mbulge, Tdust = tdust, fpah = fpah, lir = lir, ir8 = ir8, IRX = irx, OH = oh, vdisp=vdisp)
 end
 
 # This function is basically and intermediary between above function and below function.
@@ -484,9 +487,6 @@ function egg(
     fescape_disk = isnothing(rng) ? exp10(fescape_disk) : rand(rng, LogNormal(fescape_disk * logten, 0.4 * logten))
     fescape_disk = clamp(fescape_disk, 0.0, 1.0)
 
-    # Velocity dispersion, Stott+16
-    vdisp = exp10(0.12 * (logMstar - 10) + 1.78)
-
 
     #####################
     # Add emission lines
@@ -540,21 +540,94 @@ function egg(
     # Make final λ and sed outputs
     λ, sed = merge_add(λ_disk, λ_bulge, sed_disk, sed_bulge)
 
-    return merge(r, (R50_arcsec = R50_arcsec, R50_bulge_arcsec = R50_bulge_arcsec, R50_disk_arcsec = R50_disk_arcsec, vdisp = vdisp, Mgas = Mgas, MH2 = MH2, fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_abs_disk = mag_abs_disk, mag_abs_bulge = mag_abs_bulge, mag_obs = mag_obs, mag_obs_disk = mag_obs_disk, mag_obs_bulge = mag_obs_bulge, λ = λ, sed = sed))
+    return merge(r, (R50_arcsec = R50_arcsec, R50_bulge_arcsec = R50_bulge_arcsec, R50_disk_arcsec = R50_disk_arcsec, Mgas = Mgas, MH2 = MH2, fpah = fpah, Mdust = Mdust, mag_abs = mag_abs, mag_abs_disk = mag_abs_disk, mag_abs_bulge = mag_abs_bulge, mag_obs = mag_obs, mag_obs_disk = mag_obs_disk, mag_obs_bulge = mag_obs_bulge, λ = λ, sed = sed))
 
 end
 
 #################################################################################
 # `generate_galaxies` here will return bulk galaxy properties but *no* photometry
 
-# This will generate `RedshiftMassFunctionSampler`s for SF and Q galaxies from provided `sf_massfunc` and `q_massfunc` keyword arguments and call below function.
-# For small number of galaxies, runtime is dominated by constructing the samplers, not running egg
+"""
+    generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, [filters, mag_sys]; kwargs...)
+
+Generate a catalog of galaxies by sampling from stellar mass functions within the specified mass and redshift ranges over a given sky area.
+
+# Arguments
+- `mmin`, `mmax`: Minimum and maximum stellar mass in solar masses (M⊙)
+- `zmin`, `zmax`: Minimum and maximum redshift
+- `area_deg2`: Sky area in square degrees
+- `filters`: (Optional) Vector of photometric filters from PhotometricFilters.jl for which to compute magnitudes
+- `mag_sys`: (Optional) Vector of magnitude systems from PhotometricFilters.jl corresponding to filters
+
+# Keyword Arguments
+- `cosmo::Cosmology.AbstractCosmology`: Cosmology model (default: Planck18)
+- `igm::IGMAttenuation`: IGM attenuation model (default: [`Inoue2014`](@ref))
+- `q_massfunc::RedshiftMassFunction`: Mass function for quiescent galaxies (default: EGGMassFunction_Q)
+- `sf_massfunc::RedshiftMassFunction`: Mass function for star-forming galaxies (default: EGGMassFunction_SF)
+- `npoints_mass::Int`: Number of mass grid points for sampling (default: 100)
+- `npoints_redshift::Int`: Number of redshift grid points for sampling (default: 100)
+- `poisson::Bool`: Whether to add Poisson noise to galaxy counts (default: false)
+- `rng::Random.AbstractRNG`: Random number generator (default: Random.default_rng())
+- `use_rng::Bool`: Whether to use random sampling for galaxy properties (default: true)
+
+# Output
+Returns a `Vector{NamedTuple}` where each element represents a galaxy with the following fields:
+
+## Basic Properties (always included)
+- `Mstar`: Stellar mass in solar masses (M⊙)
+- `z`: Redshift
+- `sfr`: Star formation rate in solar masses per year (M⊙/yr)
+- `sfr_ir`: Contribution of IR light to the star formation rate in M⊙/yr
+- `sfr_uv`: Contribution of UV light to the star formation rate in M⊙/yr
+- `R50`: Total half-light radius in kpc
+- `R50_disk`: Disk half-light radius in kpc
+- `R50_bulge`: Bulge half-light radius in kpc
+- `disk_ratio`: Disk axis ratio (b/a)
+- `bulge_ratio`: Bulge axis ratio (b/a)
+- `PA`: Position angle in degrees (between -180 and 180)
+- `BT`: Bulge-to-total mass ratio (`Mbulge` / `Mstar`)
+- `Mdisk`: Disk stellar mass in M⊙
+- `Mbulge`: Bulge stellar mass in M⊙
+- `Tdust`: Dust temperature in Kelvin
+- `fpah`: Fraction of dust mass contributed by PAH molecules
+- `lir`: Infrared luminosity from 8-1000 μm in solar luminosities (L⊙)
+- `ir8`: Ratio of IR to 8 μm luminosity
+- `IRX`: IRX = Ratio of sfr_ir to sfr_uv
+- `OH`: Oxygen abundance in solar units (12 + log(O/H))
+- `uv_disk`, `vj_disk`: U-V and V-J colors for disk
+- `uv_bulge`, `vj_bulge`: U-V and V-J colors for bulge
+- `vdisp`: Velocity dispersion in km/s (estimated from stellar mass)
+
+## Photometry Properties (when filters provided)
+- `R50_arcsec`: Total half-light radius in arcseconds
+- `R50_disk_arcsec`: Disk half-light radius in arcseconds
+- `R50_bulge_arcsec`: Bulge half-light radius in arcseconds
+- `Mgas`: Gas mass in M⊙
+- `MH2`: Molecular hydrogen mass in M⊙
+- `Mdust`: Dust mass in M⊙
+- `mag_abs`: Absolute magnitudes in each filter
+- `mag_abs_disk`: Absolute disk magnitudes in each filter
+- `mag_abs_bulge`: Absolute bulge magnitudes in each filter
+- `mag_obs`: Observed magnitudes in each filter (including distance modulus)
+- `mag_obs_disk`: Observed disk magnitudes in each filter
+- `mag_obs_bulge`: Observed bulge magnitudes in each filter
+- `λ`: Wavelength array in Angstroms
+- `sed`: Spectral energy distribution in erg/s/cm²/Å
+
+# Notes
+- Galaxies are sampled from separate mass functions for star-forming and quiescent populations
+- The number of galaxies is determined by integrating the mass functions over the specified mass and redshift ranges and correcting for the `area_deg2
+- When photometry is requested, SEDs are assigned based on sampled U-V and V-J colors from the Schreiber+2017 library
+"""
 function generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, args...;
     cosmo::AbstractCosmology=Planck18,
     q_massfunc::RedshiftMassFunction=EGGMassFunction_Q,
     sf_massfunc::RedshiftMassFunction=EGGMassFunction_SF,
     npoints_mass::Int=100, npoints_redshift::Int=100,
     kws...)
+
+    # This will generate `RedshiftMassFunctionSampler`s for SF and Q galaxies from provided `sf_massfunc` and `q_massfunc` keyword arguments and call below function.
+    # For small number of galaxies, runtime is dominated by constructing the samplers, not running egg
 
     @argcheck mmin < mmax "Minimum stellar mass `mmin` must be less than maximum stellar mass `mmax`."
     @argcheck zmin < zmax "Minimum redshift `zmin` must be less than maximum redshift `zmax`."
