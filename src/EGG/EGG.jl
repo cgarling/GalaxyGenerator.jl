@@ -550,7 +550,7 @@ end
 """
     generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, [filters, mag_sys]; kwargs...)
 
-Generate a catalog of galaxies by sampling from stellar mass functions within the specified mass and redshift ranges over a given sky area.
+Generate a catalog of galaxies by sampling from stellar mass functions within the specified mass and redshift ranges over a given sky area. Based on the EGG model of [Schreiber2017](@citet).
 
 # Arguments
 - `mmin`, `mmax`: Minimum and maximum stellar mass in solar masses (M⊙)
@@ -560,14 +560,14 @@ Generate a catalog of galaxies by sampling from stellar mass functions within th
 - `mag_sys`: (Optional) Vector of magnitude systems from PhotometricFilters.jl corresponding to filters
 
 # Keyword Arguments
-- `cosmo::Cosmology.AbstractCosmology`: Cosmology model (default: Planck18)
-- `igm::IGMAttenuation`: IGM attenuation model (default: [`Inoue2014`](@ref))
-- `q_massfunc::RedshiftMassFunction`: Mass function for quiescent galaxies (default: EGGMassFunction_Q)
-- `sf_massfunc::RedshiftMassFunction`: Mass function for star-forming galaxies (default: EGGMassFunction_SF)
+- `cosmo::Cosmology.AbstractCosmology`: Cosmology model (default: `Cosmology.Planck18`)
+- `igm::IGMAttenuation`: IGM attenuation model (default: [`GalaxyGenerator.IGM.Inoue2014`](@ref))
+- `q_massfunc::RedshiftMassFunction`: Mass function for quiescent galaxies (default: [`GalaxyGenerator.EGG.EGGMassFunction_Q`](@ref))
+- `sf_massfunc::RedshiftMassFunction`: Mass function for star-forming galaxies (default: [`GalaxyGenerator.EGG.EGGMassFunction_SF`](@ref))
 - `npoints_mass::Int`: Number of mass grid points for sampling (default: 100)
 - `npoints_redshift::Int`: Number of redshift grid points for sampling (default: 100)
 - `poisson::Bool`: Whether to add Poisson noise to galaxy counts (default: false)
-- `rng::Random.AbstractRNG`: Random number generator (default: Random.default_rng())
+- `rng::Random.AbstractRNG`: Random number generator (default: `Random.default_rng()`)
 - `use_rng::Bool`: Whether to use random sampling for galaxy properties (default: true)
 
 # Output
@@ -616,8 +616,8 @@ Returns a `Vector{NamedTuple}` where each element represents a galaxy with the f
 
 # Notes
 - Galaxies are sampled from separate mass functions for star-forming and quiescent populations
-- The number of galaxies is determined by integrating the mass functions over the specified mass and redshift ranges and correcting for the `area_deg2
-- When photometry is requested, SEDs are assigned based on sampled U-V and V-J colors from the Schreiber+2017 library
+- The number of galaxies is determined by integrating the mass functions over the specified mass and redshift ranges and correcting for the `area_deg2`
+- When photometry is requested, SEDs are assigned based on sampled U-V and V-J colors from the [Schreiber2017](@citet) library
 """
 function generate_galaxies(mmin, mmax, zmin, zmax, area_deg2, args...;
     cosmo::AbstractCosmology=Planck18,

@@ -93,6 +93,13 @@ Colorbar(fig[1,2], hm, size=40) # , tellheight=false, tellwidth=false)
 fig
 ```
 
+# Catalog Generation
+The main function to compute galaxy catalogs is [`generate_galaxies`](@ref GalaxyGenerator.EGG.generate_galaxies).
+
+```@docs
+GalaxyGenerator.EGG.generate_galaxies
+```
+
 ## EGG References
 This page cites the following references:
 

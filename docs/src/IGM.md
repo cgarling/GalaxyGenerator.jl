@@ -15,6 +15,12 @@ GalaxyGenerator.IGM.Madau1995IGM
 GalaxyGenerator.IGM.Inoue2014IGM
 ```
 
+As [`GalaxyGenerator.IGM.Inoue2014IGM`] requires some setup to initialize, we also provide a pre-initalized instance,
+
+```@docs
+GalaxyGenerator.IGM.Inoue2014
+```
+
 # Model Comparison
 Below we use Makie.jl to plot a comparison between the different IGM attenuation model. This can be compared to, e.g., Figure 4 of [Inoue2014](@citet).
 
