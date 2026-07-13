@@ -18,6 +18,7 @@ using IrrationalConstants: logten
 import Logging
 using PhotometricFilters: AbstractFilter, magnitude, MagnitudeSystem, mean_flux_density, zeropoint_mag, detector_type, wavelength, throughput, AB, ST, Vega
 using Pkg.Artifacts: @artifact_str
+using ProgressMeter: Progress, next!
 using Random: Random, default_rng, AbstractRNG
 using SpecialFunctions: erf
 using StaticArrays: SVector
@@ -569,6 +570,7 @@ Generate a catalog of galaxies by sampling from stellar mass functions within th
 - `poisson::Bool`: Whether to add Poisson noise to galaxy counts (default: false)
 - `rng::Random.AbstractRNG`: Random number generator (default: `Random.default_rng()`)
 - `use_rng::Bool`: Whether to use random sampling for galaxy properties (default: true)
+- `show_progress::Bool`: Whether to show a progress bar during galaxy generation (default: true)
 
 # Output
 Returns a `Vector{NamedTuple}` where each element represents a galaxy with the following fields:
@@ -645,7 +647,9 @@ function generate_galaxies(
     cosmo::AbstractCosmology=Planck18,
     rng::AbstractRNG=default_rng(),
     use_rng::Bool=true,  # We *have* to use random sampling for redshifts, stellar masses, but RNG for galaxy properties is optional
-    poisson::Bool=false) # Whether to add Poisson scatter to number of galaxies (true) or just return expected number (false)
+    poisson::Bool=false, # Whether to add Poisson scatter to number of galaxies (true) or just return expected number (false)
+    show_progress::Bool=true # Whether to show progress bar
+    )
 
     @argcheck 0 < area_deg2 < 4π * (180/π)^2 "Area in deg² must be between 0 and the full sky (~41253 deg²)."
     # Retrieve mass and redshift limits from samplers
@@ -679,11 +683,14 @@ function generate_galaxies(
     r1 = egg(sf[1, 1], sf[2, 1], true; rng=rng)
     results = Vector{typeof(r1)}(undef, N_sf + N_q)
     results[1] = r1
+    pbar = Progress(N_sf + N_q; desc="Generating galaxies", dt=1.0, barlen=30, enabled=show_progress)
     Threads.@threads for i in 1:N_sf
         results[i] = egg(sf[1, i], sf[2, i], true; rng=rng)
+        next!(pbar)
     end
     Threads.@threads for i in 1:N_q
         results[N_sf + i] = egg(q[1, i], q[2, i], false; rng=rng)
+        next!(pbar)
     end
 
     return results
@@ -782,6 +789,7 @@ function generate_galaxies(
     rng::AbstractRNG=default_rng(),
     use_rng::Bool=true,  # We *have* to use random sampling for redshifts, stellar masses, but RNG for galaxy properties is optional
     poisson::Bool=false, # Whether to add Poisson scatter to number of galaxies (true) or just return expected number (false)
+    show_progress::Bool=true,
     kws...)
 
     @argcheck 0 < area_deg2 < 4π * (180/π)^2 "Area in deg² must be between 0 and the full sky (~41253 deg²)."
@@ -821,11 +829,14 @@ function generate_galaxies(
     r1 = egg(sf[1,1], sf[2,1], true, filters, zpts; rng, kws...)
     results = Vector{typeof(r1)}(undef, N_sf + N_q)
     results[1] = r1
+    pbar = Progress(N_sf + N_q; desc="Generating galaxies", dt=1.0, barlen=30, enabled=show_progress)
     Threads.@threads for i in 1:N_sf
         results[i] = egg(sf[1, i], sf[2, i], true, filters, zpts; rng, cosmo, kws...)
+        next!(pbar)
     end
     Threads.@threads for i in 1:N_q
         results[N_sf + i] = egg(q[1, i], q[2, i], false, filters, zpts; rng, cosmo, kws...)
+        next!(pbar)
     end
 
     return results

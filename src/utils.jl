@@ -352,7 +352,27 @@ function random_point_in_radius(coord::SkyCoords.AbstractSkyCoords, r, rng::Abst
     u = rand(rng)
     dist = acos(1 - (1 - cos(r)) * u) # uniform in solid angle
     return random_point_at_radius(coord, dist, rng)
-end 
+end
+
+"""
+    drop_keys(nt::NamedTuple, keys::Symbol...)
+    drop_keys(nt::NamedTuple, keys::NTuple{N, Symbol}) where {N}
+    drop_keys(nt::NamedTuple, ::Val{keys}) where {keys} = Base.structdiff(nt, NamedTuple{keys})
+
+Returns a new `NamedTuple` based on `nt` with the specified `keys` removed.
+
+# Examples
+```jldoctest
+julia> drop_keys((a=1, b=2, c=3), :b)
+(a = 1, c = 3)
+
+julia> drop_keys((a=1, b=2, c=3), (:b, :c))
+(a = 1,)
+```
+"""
+drop_keys(nt::NamedTuple, keys::Symbol...) = Base.structdiff(nt, NamedTuple{keys})
+drop_keys(nt::NamedTuple, keys::NTuple{N, Symbol}) where {N} = Base.structdiff(nt, NamedTuple{keys})
+drop_keys(nt::NamedTuple, ::Val{keys}) where {keys} = Base.structdiff(nt, NamedTuple{keys})
 
 # """
 #     magnitude_fast(f::AbstractFilter, T::MagnitudeSystem, wavelengths, flux)
