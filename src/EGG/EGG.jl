@@ -5,7 +5,7 @@ Contains code to generate galaxy catalogs using methods similar to those used in
 """
 module EGG
 
-using ..GalaxyGenerator: interp_lin, interp_log, merge_add, find_bin, f_sky, sorted_common, sorted_setdiff
+using ..GalaxyGenerator: interp_lin, interp_log, merge_add, find_bin, f_sky, sorted_common, sorted_setdiff, drop_keys, _validate_dropped
 using ..GalaxyGenerator.IGM: IGMAttenuation, transmission, tau, Inoue2014
 using ..GalaxyGenerator.MassFunctions: RedshiftMassFunction, RedshiftMassFunctionSampler, MassFunctionSampler, BinnedRedshiftMassFunction, DoubleSchechterMassFunction, integrate
 
@@ -571,6 +571,8 @@ Generate a catalog of galaxies by sampling from stellar mass functions within th
 - `rng::Random.AbstractRNG`: Random number generator (default: `Random.default_rng()`)
 - `use_rng::Bool`: Whether to use random sampling for galaxy properties (default: true)
 - `show_progress::Bool`: Whether to show a progress bar during galaxy generation (default: true)
+- `drop`: Keys to drop from the output NamedTuple (all keys kept by default). Main use case is to drop
+  SED keys if you don't need the final SED models, since they can take up significant memory for large catalogs. Example: `drop=(:λ, :sed)`.
 
 # Output
 Returns a `Vector{NamedTuple}` where each element represents a galaxy with the following fields:
@@ -648,9 +650,11 @@ function generate_galaxies(
     rng::AbstractRNG=default_rng(),
     use_rng::Bool=true,  # We *have* to use random sampling for redshifts, stellar masses, but RNG for galaxy properties is optional
     poisson::Bool=false, # Whether to add Poisson scatter to number of galaxies (true) or just return expected number (false)
-    show_progress::Bool=true # Whether to show progress bar
+    show_progress::Bool=true, # Whether to show progress bar
+    drop = nothing
     )
 
+    _validate_dropped(drop)
     @argcheck 0 < area_deg2 < 4π * (180/π)^2 "Area in deg² must be between 0 and the full sky (~41253 deg²)."
     # Retrieve mass and redshift limits from samplers
     mmin_sf, mmax_sf = sf_sampler.mass_grid[1], sf_sampler.mass_grid[end]
@@ -680,16 +684,16 @@ function generate_galaxies(
 
     rng = use_rng ? rng : nothing
     # Get first result so we know the output return type
-    r1 = egg(sf[1, 1], sf[2, 1], true; rng=rng)
+    r1 = drop_keys(egg(sf[1, 1], sf[2, 1], true; rng=rng), drop)
     results = Vector{typeof(r1)}(undef, N_sf + N_q)
     results[1] = r1
     pbar = Progress(N_sf + N_q; desc="Generating galaxies", dt=1.0, barlen=30, enabled=show_progress)
     Threads.@threads for i in 1:N_sf
-        results[i] = egg(sf[1, i], sf[2, i], true; rng=rng)
+        results[i] = drop_keys(egg(sf[1, i], sf[2, i], true; rng=rng), drop)
         next!(pbar)
     end
     Threads.@threads for i in 1:N_q
-        results[N_sf + i] = egg(q[1, i], q[2, i], false; rng=rng)
+        results[N_sf + i] = drop_keys(egg(q[1, i], q[2, i], false; rng=rng), drop)
         next!(pbar)
     end
 
@@ -790,8 +794,10 @@ function generate_galaxies(
     use_rng::Bool=true,  # We *have* to use random sampling for redshifts, stellar masses, but RNG for galaxy properties is optional
     poisson::Bool=false, # Whether to add Poisson scatter to number of galaxies (true) or just return expected number (false)
     show_progress::Bool=true,
+    drop = nothing,
     kws...)
 
+    _validate_dropped(drop)
     @argcheck 0 < area_deg2 < 4π * (180/π)^2 "Area in deg² must be between 0 and the full sky (~41253 deg²)."
     # Retrieve mass and redshift limits from samplers
     mmin_sf, mmax_sf = sf_sampler.mass_grid[1], sf_sampler.mass_grid[end]
@@ -826,16 +832,16 @@ function generate_galaxies(
     rng = use_rng ? rng : nothing
 
     # Get first result so we know the output return type
-    r1 = egg(sf[1,1], sf[2,1], true, filters, zpts; rng, kws...)
+    r1 = drop_keys(egg(sf[1,1], sf[2,1], true, filters, zpts; rng, kws...), drop)
     results = Vector{typeof(r1)}(undef, N_sf + N_q)
     results[1] = r1
     pbar = Progress(N_sf + N_q; desc="Generating galaxies", dt=1.0, barlen=30, enabled=show_progress)
     Threads.@threads for i in 1:N_sf
-        results[i] = egg(sf[1, i], sf[2, i], true, filters, zpts; rng, cosmo, kws...)
+        results[i] = drop_keys(egg(sf[1, i], sf[2, i], true, filters, zpts; rng, cosmo, kws...), drop)
         next!(pbar)
     end
     Threads.@threads for i in 1:N_q
-        results[N_sf + i] = egg(q[1, i], q[2, i], false, filters, zpts; rng, cosmo, kws...)
+        results[N_sf + i] = drop_keys(egg(q[1, i], q[2, i], false, filters, zpts; rng, cosmo, kws...), drop)
         next!(pbar)
     end
 

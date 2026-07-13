@@ -358,21 +358,45 @@ end
     drop_keys(nt::NamedTuple, keys::Symbol...)
     drop_keys(nt::NamedTuple, keys::NTuple{N, Symbol}) where {N}
     drop_keys(nt::NamedTuple, ::Val{keys}) where {keys} = Base.structdiff(nt, NamedTuple{keys})
+    drop_keys(nt::NamedTuple, ::Nothing)
 
 Returns a new `NamedTuple` based on `nt` with the specified `keys` removed.
+If `keys` is `Nothing`, returns `nt` unchanged.
+When the keys are known at compile time, the `Val` version can be used for better performance,
+but this is generally not necessary.
 
 # Examples
 ```jldoctest
+julia> using GalaxyGenerator: drop_keys
+
 julia> drop_keys((a=1, b=2, c=3), :b)
 (a = 1, c = 3)
 
 julia> drop_keys((a=1, b=2, c=3), (:b, :c))
+(a = 1,)
+
+julia> drop_keys((a=1, b=2, c=3), Val((:b, :c)))
 (a = 1,)
 ```
 """
 drop_keys(nt::NamedTuple, keys::Symbol...) = Base.structdiff(nt, NamedTuple{keys})
 drop_keys(nt::NamedTuple, keys::NTuple{N, Symbol}) where {N} = Base.structdiff(nt, NamedTuple{keys})
 drop_keys(nt::NamedTuple, ::Val{keys}) where {keys} = Base.structdiff(nt, NamedTuple{keys})
+drop_keys(nt::NamedTuple, ::Nothing) = nt
+
+"""
+`_validate_dropped(keys...)` checks that arguments to be used in `drop_keys` are valid. Returns `nothing` if the keys are valid and errors otherwise.
+"""
+_validate_dropped(::Symbol...) = nothing
+_validate_dropped(::NTuple{N, Symbol}) where {N} = nothing
+_validate_dropped(::Nothing) = nothing
+function _validate_dropped(::Val{keys}) where {keys}
+    if !(keys isa NTuple{N, Symbol} where N)
+        throw(ArgumentError("Val{keys} must be a Val of a NTuple of Symbols, got Val{$(typeof(keys))}"))
+    end
+    return nothing
+end
+_validate_dropped(keys...) = throw(ArgumentError("Invalid keys to drop: $(keys). Must be a Symbol, NTuple of Symbols, or Val of NTuple of Symbols."))
 
 # """
 #     magnitude_fast(f::AbstractFilter, T::MagnitudeSystem, wavelengths, flux)
