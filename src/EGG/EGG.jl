@@ -88,16 +88,16 @@ Given a redshift `z`, whether the galaxy is star-forming (`SF::Bool`), an appare
 # Returns
 - `mass_lim`: Stellar mass limit (in M⊙) required to reach the specified magnitude limit at redshift `z`
 
-Below we calculate the stellar mass limit at redshift 2 for star-forming galaxies with an apparent magnitude limit of 25 in the HST/ACS F606W filter in the Vega magnitude system.
+Below we calculate the stellar mass limit at redshift 2 for star-forming galaxies with an apparent magnitude limit of 25 in the HST/ACS F606W filter in the AB magnitude system.
 
 ```jldoctest
 julia> using GalaxyGenerator.EGG: get_mass_limit
 
-julia> using PhotometricFilters: HST_ACS_WFC_F606W, Vega
+julia> using PhotometricFilters: HST_ACS_WFC_F606W, AB
 
-julia> result = get_mass_limit(2.0, true, 26.0, HST_ACS_WFC_F606W(), Vega());
+julia> result = get_mass_limit(2.0, true, 26.0, HST_ACS_WFC_F606W(), AB());
 
-julia> isapprox(result, 1.077217e8; rtol=1e-2)
+julia> isapprox(result, 1.267682e8; rtol=1e-2)
 true
 ```
 """
